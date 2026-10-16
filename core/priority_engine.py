@@ -139,6 +139,8 @@ class PresenceData:
     end: int | None
     buttons: tuple[tuple[str, str], ...]
     activity_type: int
+    tier: int = 6
+    rule_id: str = ""
 
     def to_kwargs(self) -> dict[str, Any]:
         fields = {
@@ -537,9 +539,11 @@ class PriorityEngine:
         if not candidates:
             return Resolution(None, None, None, None, live_tiers, live_rules, False, "nothing to show")
 
+        # Active/foreground contexts (foreground=True, including live P1/P2/P3/P4/P5) always beat
+        # background sticky carry-overs (foreground=False), preventing sticky IDE rules from blocking Spotify/media.
         rule, activity = min(
             candidates,
-            key=lambda pair: (pair[0].tier, 0 if pair[1].foreground else 1, book.order_of(pair[0].id)),
+            key=lambda pair: (0 if pair[1].foreground else 1, pair[0].tier, book.order_of(pair[0].id)),
         )
         self._touch_sessions(candidates, inp.now)
         presence = self._render(rule, activity, shared, inp.now)
@@ -663,4 +667,6 @@ class PriorityEngine:
             end=end,
             buttons=tuple(buttons),
             activity_type=spec.activity_type,
+            tier=int(rule.tier),
+            rule_id=rule.id,
         )

@@ -96,10 +96,12 @@ class IPCManager(QThread):
     presence_sent = Signal(object)
     user_detected = Signal(str, str)
 
-    # Discord documents five activity updates per twenty seconds; stay one below.
+    # Discord allows up to 5 RPC updates per 20s window (~4.5s sustained).
+    # We reserve burst tokens for priority/context switches (0.25s gap) while spacing sustained updates at 4.5s.
     WINDOW_SECONDS = 20.0
     WINDOW_LIMIT = 4
-    MIN_GAP_SECONDS = 1.0
+    SUSTAINED_GAP_SECONDS = 4.5
+    PRIORITY_SWITCH_GAP = 0.25
     HEARTBEAT_SECONDS = 45.0
     LIVENESS_CHECK_SECONDS = 5.0
     CONNECT_TIMEOUT = 15.0
@@ -113,6 +115,20 @@ class IPCManager(QThread):
         self._loop: asyncio.AbstractEventLoop | None = None
         self._wake: asyncio.Event | None = None
         self._status = ("", "")
+
+    @staticmethod
+    def _is_priority_transition(prev: PresenceData | None, curr: PresenceData | None) -> bool:
+        """Return True when switching rules/tiers, changing track/details, or upgrading placeholder to album cover."""
+        if (prev is None) != (curr is None):
+            return True
+        if prev is None or curr is None:
+            return False
+        return (
+            curr.tier != prev.tier
+            or curr.rule_id != prev.rule_id
+            or curr.details != prev.details
+            or curr.large_image != prev.large_image
+        )
 
     @staticmethod
     def extract_user_identity(user: MappingOrDict) -> tuple[str, str]:
@@ -136,6 +152,7 @@ class IPCManager(QThread):
         return display_name, handle
 
     def submit(self, presence: PresenceData | None) -> None:
+        """Replace any queued pending payload with the latest state and wake the IPC worker immediately."""
         with self._lock:
             self._desired = presence
         self._poke()
@@ -256,7 +273,13 @@ class IPCManager(QThread):
             if due:
                 wait = 0.0
                 if sent_at:
-                    wait = max(wait, self.MIN_GAP_SECONDS - (now - sent_at[-1]))
+                    is_switch = (not pushed_once) or self._is_priority_transition(last_pushed, desired)
+                    min_gap = (
+                        self.PRIORITY_SWITCH_GAP
+                        if (is_switch and len(sent_at) < self.WINDOW_LIMIT - 1)
+                        else self.SUSTAINED_GAP_SECONDS
+                    )
+                    wait = max(wait, min_gap - (now - sent_at[-1]))
                 if len(sent_at) >= self.WINDOW_LIMIT:
                     wait = max(wait, self.WINDOW_SECONDS - (now - sent_at[0]) + 0.1)
                 if wait <= 0:

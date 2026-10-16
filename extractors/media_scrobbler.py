@@ -1,11 +1,13 @@
-"""Windows System Media Transport Controls listener with asynchronous dynamic Album Art fetcher (iTunes / Deezer)."""
+"""Windows System Media Transport Controls listener with high-accuracy, non-blocking Album Art fetcher."""
 from __future__ import annotations
 
 import asyncio
+import difflib
 import json
 import re
 import threading
 import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -13,7 +15,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QObject, QRunnable, QThread, QThreadPool, Signal
 
 try:
     from winsdk.windows.media.control import (
@@ -27,28 +29,163 @@ except Exception:  # winsdk missing, or not Windows
     PlaybackStatus = None
     SMTC_AVAILABLE = False
 
-POLL_FALLBACK_SECONDS = 1.5
+POLL_FALLBACK_SECONDS = 0.8
 SEEK_TOLERANCE_SECONDS = 3.0
 
 ITUNES_SEARCH_URL = "https://itunes.apple.com/search"
 DEEZER_SEARCH_URL = "https://api.deezer.com/search"
-HTTP_TIMEOUT_SECONDS = 4.0
+HTTP_TIMEOUT_SECONDS = 1.8
 TARGET_ARTWORK_SIZE = "600x600"
+MIN_MATCH_SCORE = 0.58
 USER_AGENT = "OmniPresence/1.0 (+https://github.com/Raf446/OmniPresence)"
 
-_NOISE_PATTERNS = (
-    re.compile(r"\s*[\(\[](?:official\s*(?:music\s*)?(?:video|audio|lyric\s*video|visualizer)|lyrics?|audio|hd|4k|remastered.*?)[\)\]]", re.I),
-    re.compile(r"\s*-\s*(?:YouTube(?:\s*Music)?|Spotify|VLC media player)\s*$", re.I),
-    re.compile(r"\s*(?:ft\.?|feat\.?)\s+[^-\(\[\)\]]+", re.I),
+# Bracketed noise patterns: (...), [...], {...} containing feat/official/remaster/from movie/live/etc.
+_BRACKET_NOISE_RE = re.compile(
+    r"[\(\[\{][^\)\]\}]*\b("
+    r"feat\.?|ft\.?|featuring|with|"
+    r"official\s*(?:music\s*)?(?:video|audio|lyric\s*video|visualizer)?|"
+    r"lyric\s*video|lyrics?|audio|video|visualizer|mv|hd|4k|hq|"
+    r"remaster(?:ed)?|anniversary|deluxe|expanded|special\s*edition|bonus\s*track|"
+    r"from\s+[\"'“”]?.*|motion\s*picture|soundtrack|ost|original\s*score|"
+    r"live(?:\s+at\b|\s+from\b|\s+in\b|\s+version\b)?|acoustic|unplugged|radio\s*edit|"
+    r"explicit|clean|version|edit|mono|stereo|slowed|reverb|sped\s*up|nightcore"
+    r")\b[^\)\]\}]*[\)\]\}]",
+    re.IGNORECASE,
 )
-_ITUNES_DIM_RE = re.compile(r"/\d+x\d+(bb|sr|bf|cc)?\.(jpg|jpeg|png|webp)$", re.I)
+
+# Trailing dash/pipe suffixes: "- Remastered 2011", "- From 'Movie'", "- Live", "- Official Video", etc.
+_DASH_SUFFIX_RE = re.compile(
+    r"\s+[-–—|]\s+("
+    r"(?:\d{4}\s+)?remaster(?:ed)?(?:\s+\d{4})?|"
+    r"from\s+[\"'“”]?.*|"
+    r"live(?:\s+at\b|\s+from\b|\s+in\b|\s+version\b.*)?|"
+    r"official\s*(?:music\s*)?(?:video|audio|lyrics?|visualizer).*|"
+    r"radio\s*edit|acoustic(?:\s+version)?|single\s+version|album\s+version|"
+    r"bonus\s*track|explicit|clean|slowed.*|sped\s*up.*|"
+    r"youtube(?:\s*music)?|spotify|vlc\s*media\s*player"
+    r")$",
+    re.IGNORECASE,
+)
+
+# Inline featuring suffix outside brackets: "Song Title feat. Someone" / "Song Title ft. Someone"
+_INLINE_FEAT_RE = re.compile(r"\s+\b(?:feat\.?|ft\.?|featuring)\s+.+$", re.IGNORECASE)
+
+# Split multiple artists: "Artist A, Artist B & Artist C" -> primary artist "Artist A"
+_ARTIST_SPLIT_RE = re.compile(r"\s*(?:,|;|&|/|\bx\b|\bfeat\.?\b|\bft\.?\b|\bwith\b)\s*", re.IGNORECASE)
+
+# Unwanted tribute / karaoke candidates when original query is not karaoke
+_TRIBUTE_NOISE_RE = re.compile(
+    r"\b(karaoke|tribute|in\s+the\s+style\s+of|made\s+famous\s+by|8-bit|lullaby\s+version|ringtone|parody)\b",
+    re.IGNORECASE,
+)
+
+_ITUNES_DIM_RE = re.compile(r"/\d+x\d+(bb|sr|bf|cc)?\.(jpg|jpeg|png|webp)$", re.IGNORECASE)
+_NON_ALNUM_RE = re.compile(r"[^\w\s]", re.UNICODE)
+_MULTI_SPACE_RE = re.compile(r"\s+")
 
 
-def _clean_query_part(text: str) -> str:
-    cleaned = text.strip()
-    for pat in _NOISE_PATTERNS:
-        cleaned = pat.sub("", cleaned)
-    return re.sub(r"\s+", " ", cleaned).strip(" -|•")
+def _strip_accents(text: str) -> str:
+    normalized = unicodedata.normalize("NFKD", text)
+    return "".join(ch for ch in normalized if not unicodedata.combining(ch))
+
+
+def sanitize_title(title: str) -> str:
+    """Clean track title by removing bracketed noise (feat, From Movie, Remastered, Live, Official Video) and suffixes."""
+    cleaned = (title or "").strip()
+    if not cleaned:
+        return ""
+    # Repeatedly strip noisy bracketed segments
+    for _ in range(3):
+        next_val = _BRACKET_NOISE_RE.sub(" ", cleaned)
+        if next_val == cleaned:
+            break
+        cleaned = next_val
+    cleaned = _DASH_SUFFIX_RE.sub("", cleaned)
+    cleaned = _INLINE_FEAT_RE.sub("", cleaned)
+    cleaned = _MULTI_SPACE_RE.sub(" ", cleaned).strip(" -–—|•")
+    return cleaned or title.strip()
+
+
+def sanitize_artist(artist: str) -> str:
+    """Extract clean primary artist name without featuring/collaborator clutter."""
+    cleaned = (artist or "").strip()
+    if not cleaned:
+        return ""
+    cleaned = re.sub(r"\s*-\s*Topic$", "", cleaned, flags=re.IGNORECASE)
+    cleaned = _BRACKET_NOISE_RE.sub(" ", cleaned)
+    parts = [p.strip() for p in _ARTIST_SPLIT_RE.split(cleaned) if p.strip()]
+    primary = parts[0] if parts else cleaned
+    return _MULTI_SPACE_RE.sub(" ", primary).strip(" -–—|•")
+
+
+def normalize_for_comparison(text: str) -> str:
+    """Lowercase, accent-folded, punctuation-free single-space string for similarity scoring."""
+    folded = _strip_accents((text or "").lower())
+    alnum = _NON_ALNUM_RE.sub(" ", folded)
+    return _MULTI_SPACE_RE.sub(" ", alnum).strip()
+
+
+def normalize_cache_key(artist: str, title: str) -> str:
+    """Normalized lowercase single-space key so minor title/artist variations hit the same cache entry."""
+    norm_artist = normalize_for_comparison(sanitize_artist(artist) or artist)
+    norm_title = normalize_for_comparison(sanitize_title(title) or title)
+    return f"{norm_artist} - {norm_title}".strip()
+
+
+def _string_similarity(a: str, b: str) -> float:
+    na, nb = normalize_for_comparison(a), normalize_for_comparison(b)
+    if not na or not nb:
+        return 0.0
+    if na == nb:
+        return 1.0
+    seq_ratio = difflib.SequenceMatcher(None, na, nb).ratio()
+    tokens_a, tokens_b = set(na.split()), set(nb.split())
+    if tokens_a and tokens_b:
+        intersection = len(tokens_a & tokens_b)
+        token_Coverage = intersection / max(min(len(tokens_a), len(tokens_b)), 1)
+        jaccard = intersection / len(tokens_a | tokens_b)
+        token_score = 0.6 * token_Coverage + 0.4 * jaccard
+    else:
+        token_score = 0.0
+    return max(seq_ratio, 0.55 * seq_ratio + 0.45 * token_score)
+
+
+def score_candidate(
+    target_artist: str,
+    target_title: str,
+    cand_artist: str,
+    cand_title: str,
+) -> float:
+    """Compute a [0.0..1.0] confidence score comparing candidate metadata against the target track."""
+    clean_t_title = sanitize_title(target_title)
+    clean_c_title = sanitize_title(cand_title)
+    title_sim = max(
+        _string_similarity(clean_t_title, clean_c_title),
+        _string_similarity(target_title, cand_title),
+    )
+
+    if target_artist.strip():
+        clean_t_artist = sanitize_artist(target_artist)
+        clean_c_artist = sanitize_artist(cand_artist)
+        artist_sim = max(
+            _string_similarity(clean_t_artist, clean_c_artist),
+            _string_similarity(target_artist, cand_artist),
+        )
+        # Hard guard: if either title or artist is completely mismatched, penalize heavily
+        if title_sim < 0.45 or artist_sim < 0.40:
+            combined = min(title_sim, artist_sim) * 0.65
+        else:
+            combined = 0.55 * title_sim + 0.45 * artist_sim
+    else:
+        combined = title_sim * 0.85
+
+    # Penalize tribute/karaoke covers unless the user is actually listening to a karaoke/tribute track
+    wanted_tribute = bool(_TRIBUTE_NOISE_RE.search(target_title) or _TRIBUTE_NOISE_RE.search(target_artist))
+    cand_is_tribute = bool(_TRIBUTE_NOISE_RE.search(cand_title) or _TRIBUTE_NOISE_RE.search(cand_artist))
+    if cand_is_tribute and not wanted_tribute:
+        combined -= 0.35
+
+    return max(0.0, min(1.0, combined))
 
 
 def upgrade_artwork_resolution(url: str, size: str = TARGET_ARTWORK_SIZE) -> str:
@@ -56,37 +193,32 @@ def upgrade_artwork_resolution(url: str, size: str = TARGET_ARTWORK_SIZE) -> str
     url = url.strip()
     if not url.lower().startswith("https://"):
         return ""
-    # iTunes artwork URL pattern: .../100x100bb.jpg -> .../600x600bb.jpg
     if "mzstatic.com" in url:
         return _ITUNES_DIM_RE.sub(rf"/{size}bb.\2", url)
-    # Deezer CDN URL pattern: .../250x250-000000-80-0-0.jpg -> .../600x600-000000-80-0-0.jpg
     if "dzcdn.net" in url:
         return re.sub(r"/\d+x\d+-", f"/{size}-", url)
     return url
 
 
 class AlbumArtResolver:
-    """Thread-safe in-memory LRU cache and rate-limited public API resolver (iTunes + Deezer fallback)."""
+    """Thread-safe in-memory LRU cache and rate-limited public API resolver with metadata validation scoring."""
 
     def __init__(
         self,
         max_entries: int = 256,
         miss_ttl_seconds: float = 90.0,
-        min_request_gap: float = 0.35,
+        min_request_gap: float = 0.25,
     ) -> None:
         self._max_entries = max_entries
         self._miss_ttl = miss_ttl_seconds
         self._min_gap = min_request_gap
         self._lock = threading.Lock()
-        # key -> (url, timestamp, is_hit)
         self._cache: OrderedDict[str, tuple[str, float, bool]] = OrderedDict()
         self._last_request_at = 0.0
 
     @staticmethod
     def make_key(artist: str, title: str) -> str:
-        norm_artist = re.sub(r"\s+", " ", (artist or "").strip().lower())
-        norm_title = re.sub(r"\s+", " ", (title or "").strip().lower())
-        return f"{norm_artist} - {norm_title}"
+        return normalize_cache_key(artist, title)
 
     def get_cached(self, artist: str, title: str) -> tuple[bool, str]:
         """Return (found_in_cache, artwork_url). Negative entries expire after miss_ttl_seconds."""
@@ -121,35 +253,45 @@ class AlbumArtResolver:
             self._last_request_at = time.monotonic()
 
     def fetch_sync(self, artist: str, title: str, album: str = "") -> str:
-        """Blocking lookup with LRU cache, rate-limit guard, iTunes primary, and Deezer fallback."""
-        if not title.strip():
+        """Lookup album cover URL with query sanitization, candidate scoring, and strict 1.8s timeout."""
+        if not (title or "").strip():
             return ""
         cached, url = self.get_cached(artist, title)
         if cached:
             return url
 
-        clean_title = _clean_query_part(title) or title.strip()
-        clean_artist = _clean_query_part(artist)
+        clean_title = sanitize_title(title)
+        clean_artist = sanitize_artist(artist)
 
-        queries: list[str] = []
+        search_terms: list[str] = []
         if clean_artist and clean_title:
-            queries.append(f"{clean_artist} {clean_title}")
-        if album.strip() and clean_title:
-            queries.append(f"{clean_title} {_clean_query_part(album)}")
-        if clean_title and clean_title not in queries:
-            queries.append(clean_title)
+            search_terms.append(f"{clean_artist} {clean_title}")
+        if artist.strip() and clean_title:
+            raw_combo = f"{artist.strip()} {clean_title}"
+            if raw_combo not in search_terms:
+                search_terms.append(raw_combo)
+        if clean_title and clean_title not in search_terms:
+            search_terms.append(clean_title)
 
-        resolved_url = ""
-        for query in queries:
-            resolved_url = self._query_itunes(query, clean_artist, clean_title)
-            if resolved_url:
-                break
-            resolved_url = self._query_deezer(query, clean_artist, clean_title)
-            if resolved_url:
+        best_url = ""
+        best_score = 0.0
+
+        for term in search_terms:
+            itunes_url, itunes_score = self._query_itunes(term, artist, title)
+            if itunes_score > best_score:
+                best_score, best_url = itunes_score, itunes_url
+            if best_score >= 0.78:
                 break
 
-        self._store(artist, title, resolved_url)
-        return resolved_url
+            deezer_url, deezer_score = self._query_deezer(term, artist, title)
+            if deezer_score > best_score:
+                best_score, best_url = deezer_score, deezer_url
+            if best_score >= 0.78:
+                break
+
+        final_url = best_url if best_score >= MIN_MATCH_SCORE else ""
+        self._store(artist, title, final_url)
+        return final_url
 
     async def fetch_async(
         self,
@@ -158,7 +300,6 @@ class AlbumArtResolver:
         album: str = "",
         loop: asyncio.AbstractEventLoop | None = None,
     ) -> str:
-        """Non-blocking async wrapper that runs HTTP resolution in a background worker thread."""
         cached, url = self.get_cached(artist, title)
         if cached:
             return url
@@ -183,54 +324,49 @@ class AlbumArtResolver:
         except (urllib.error.URLError, TimeoutError, OSError, ValueError):
             return None
 
-    def _query_itunes(self, query: str, artist: str, title: str) -> str:
-        params = urllib.parse.urlencode({"term": query, "entity": "song", "limit": 5})
-        payload = self._http_json(f"{ITUNES_SEARCH_URL}?{params}")
+    def _query_itunes(self, term: str, target_artist: str, target_title: str) -> tuple[str, float]:
+        # Format: https://itunes.apple.com/search?term={clean_artist}+{clean_title}&entity=song&limit=5
+        encoded_term = urllib.parse.quote_plus(term.strip())
+        url = f"{ITUNES_SEARCH_URL}?term={encoded_term}&entity=song&limit=5"
+        payload = self._http_json(url)
         if not payload:
-            return ""
+            return "", 0.0
         results = payload.get("results")
         if not isinstance(results, list) or not results:
-            return ""
+            return "", 0.0
 
         best_url = ""
-        best_score = -1
-        target_artist = artist.lower()
-        target_title = title.lower()
-
-        for item in results:
+        best_score = 0.0
+        for item in results[:5]:
             if not isinstance(item, dict):
                 continue
             raw_art = str(item.get("artworkUrl100") or item.get("artworkUrl60") or "").strip()
             if not raw_art:
                 continue
-            cand_title = str(item.get("trackName") or "").lower()
-            cand_artist = str(item.get("artistName") or "").lower()
-            score = 0
-            if target_title and (target_title in cand_title or cand_title in target_title):
-                score += 2
-            if target_artist and (target_artist in cand_artist or cand_artist in target_artist):
-                score += 3
+            cand_title = str(item.get("trackName") or "")
+            cand_artist = str(item.get("artistName") or "")
+            score = score_candidate(target_artist, target_title, cand_artist, cand_title)
             if score > best_score:
                 best_score = score
                 best_url = raw_art
 
-        return upgrade_artwork_resolution(best_url, TARGET_ARTWORK_SIZE) if best_url else ""
+        if best_url and best_score >= MIN_MATCH_SCORE:
+            return upgrade_artwork_resolution(best_url, TARGET_ARTWORK_SIZE), best_score
+        return "", best_score
 
-    def _query_deezer(self, query: str, artist: str, title: str) -> str:
-        params = urllib.parse.urlencode({"q": query, "limit": 5})
-        payload = self._http_json(f"{DEEZER_SEARCH_URL}?{params}")
+    def _query_deezer(self, term: str, target_artist: str, target_title: str) -> tuple[str, float]:
+        encoded_term = urllib.parse.quote_plus(term.strip())
+        url = f"{DEEZER_SEARCH_URL}?q={encoded_term}&limit=5"
+        payload = self._http_json(url)
         if not payload:
-            return ""
+            return "", 0.0
         results = payload.get("data")
         if not isinstance(results, list) or not results:
-            return ""
+            return "", 0.0
 
         best_url = ""
-        best_score = -1
-        target_artist = artist.lower()
-        target_title = title.lower()
-
-        for item in results:
+        best_score = 0.0
+        for item in results[:5]:
             if not isinstance(item, dict):
                 continue
             album_obj = item.get("album") or {}
@@ -243,21 +379,18 @@ class AlbumArtResolver:
             ).strip()
             if not raw_art:
                 continue
-            cand_title = str(item.get("title") or "").lower()
-            cand_artist = str(artist_obj.get("name") or "").lower()
-            score = 0
-            if target_title and (target_title in cand_title or cand_title in target_title):
-                score += 2
-            if target_artist and (target_artist in cand_artist or cand_artist in target_artist):
-                score += 3
+            cand_title = str(item.get("title") or "")
+            cand_artist = str(artist_obj.get("name") or "")
+            score = score_candidate(target_artist, target_title, cand_artist, cand_title)
             if score > best_score:
                 best_score = score
                 best_url = raw_art
 
-        return upgrade_artwork_resolution(best_url, TARGET_ARTWORK_SIZE) if best_url else ""
+        if best_url and best_score >= MIN_MATCH_SCORE:
+            return upgrade_artwork_resolution(best_url, TARGET_ARTWORK_SIZE), best_score
+        return "", best_score
 
 
-# Shared singleton resolver used by MediaScrobbler and testable from CLI
 ALBUM_ART_RESOLVER = AlbumArtResolver()
 
 
@@ -281,8 +414,32 @@ class MediaInfo:
         return (self.app_id, self.title, self.artist, self.album, self.artwork_url)
 
 
+class _ArtworkSignals(QObject):
+    finished = Signal(str, object, str)
+
+
+class _ArtworkRunnable(QRunnable):
+    """QThreadPool background task that resolves album cover URL without blocking SMTC or IPC."""
+
+    def __init__(self, resolver: AlbumArtResolver, cache_key: str, info: MediaInfo) -> None:
+        super().__init__()
+        self.setAutoDelete(True)
+        self._resolver = resolver
+        self._cache_key = cache_key
+        self._info = info
+        self.signals = _ArtworkSignals()
+
+    def run(self) -> None:
+        url = ""
+        try:
+            url = self._resolver.fetch_sync(self._info.artist, self._info.title, self._info.album)
+        except Exception:
+            url = ""
+        self.signals.finished.emit(self._cache_key, self._info, url)
+
+
 class MediaScrobbler(QThread):
-    """Runs an asyncio loop that watches SMTC sessions, fetches album art asynchronously, and emits the active track."""
+    """Runs an asyncio loop that watches SMTC sessions and dispatches QThreadPool tasks for album art."""
 
     media_changed = Signal(object)
     message = Signal(str, str)
@@ -296,7 +453,9 @@ class MediaScrobbler(QThread):
         super().__init__(parent)
         self._preferred = [app.lower() for app in (preferred_apps or [])]
         self._art = art_resolver or ALBUM_ART_RESOLVER
+        self._pool = QThreadPool.globalInstance()
         self._halt = threading.Event()
+        self._state_lock = threading.Lock()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._wake: asyncio.Event | None = None
         self._hooked: set[str] = set()
@@ -304,7 +463,7 @@ class MediaScrobbler(QThread):
         self._last_identity: tuple | None = None
         self._last_start: float | None = None
         self._pending_art_keys: set[str] = set()
-        self._bg_tasks: set[asyncio.Task] = set()
+        self._active_runnables: set[_ArtworkRunnable] = set()
 
     def stop(self) -> None:
         self._halt.set()
@@ -328,9 +487,6 @@ class MediaScrobbler(QThread):
         except Exception as exc:
             self.message.emit("error", f"media listener stopped: {exc!r}")
         finally:
-            for task in list(self._bg_tasks):
-                task.cancel()
-            self._bg_tasks.clear()
             self._loop = None
             loop.close()
 
@@ -338,7 +494,7 @@ class MediaScrobbler(QThread):
         self._wake = asyncio.Event()
         manager = await SessionManager.request_async()
         self._subscribe_manager(manager)
-        self.message.emit("info", "listening for Windows media sessions (dynamic album art enabled)")
+        self.message.emit("info", "listening for Windows media sessions (instant event trigger + validated album art)")
         while not self._halt.is_set():
             self._wake.clear()
             try:
@@ -357,7 +513,8 @@ class MediaScrobbler(QThread):
         loop, wake = self._loop, self._wake
 
         def on_change(*_args) -> None:
-            loop.call_soon_threadsafe(wake.set)
+            if loop is not None and wake is not None and not loop.is_closed():
+                loop.call_soon_threadsafe(wake.set)
 
         self._handlers.append(on_change)
         try:
@@ -374,7 +531,8 @@ class MediaScrobbler(QThread):
         loop, wake = self._loop, self._wake
 
         def on_change(*_args) -> None:
-            loop.call_soon_threadsafe(wake.set)
+            if loop is not None and wake is not None and not loop.is_closed():
+                loop.call_soon_threadsafe(wake.set)
 
         self._handlers.append(on_change)
         try:
@@ -420,7 +578,7 @@ class MediaScrobbler(QThread):
                 now = time.time()
                 duration, start_at, end_at = span, now - position, now - position + span
 
-        # Check in-memory LRU cache first; if not cached, trigger non-blocking background fetch
+        # Instant check against normalized LRU cache; if missing, emit placeholder immediately and dispatch QThreadPool task
         cached, artwork_url = self._art.get_cached(artist, title)
         info = MediaInfo(
             app_id=session.source_app_user_model_id,
@@ -433,52 +591,58 @@ class MediaScrobbler(QThread):
             artwork_url=artwork_url,
         )
         if not cached:
-            self._schedule_artwork_fetch(info)
+            self._dispatch_artwork_task(info)
         return info
 
-    def _schedule_artwork_fetch(self, info: MediaInfo) -> None:
-        if self._loop is None or self._halt.is_set():
+    def _dispatch_artwork_task(self, info: MediaInfo) -> None:
+        if self._halt.is_set():
             return
         cache_key = self._art.make_key(info.artist, info.title)
-        if cache_key in self._pending_art_keys:
-            return
-        self._pending_art_keys.add(cache_key)
+        with self._state_lock:
+            if cache_key in self._pending_art_keys:
+                return
+            self._pending_art_keys.add(cache_key)
 
-        async def _worker() -> None:
-            try:
-                url = await self._art.fetch_async(info.artist, info.title, info.album, self._loop)
-                if self._halt.is_set():
-                    return
-                if url:
-                    self.message.emit("info", f"album cover resolved ({TARGET_ARTWORK_SIZE}): {info.artist} - {info.title}".strip(" -"))
-                    # If the same track is still playing, immediately publish the enriched MediaInfo
-                    if self._last_identity is not None and self._last_identity[:4] == info.track_key:
-                        enriched = replace(info, artwork_url=url, start_at=self._last_start)
-                        self._publish(enriched)
-                    self._poke()
-                else:
-                    self.message.emit("info", f"no online cover found for '{info.title}', using fallback icon")
-            except Exception as exc:
-                self.message.emit("warn", f"album cover lookup failed: {exc!r}")
-            finally:
-                self._pending_art_keys.discard(cache_key)
+        runnable = _ArtworkRunnable(self._art, cache_key, info)
+        self._active_runnables.add(runnable)
 
-        task = self._loop.create_task(_worker())
-        self._bg_tasks.add(task)
-        task.add_done_callback(self._bg_tasks.discard)
+        def _on_done(key: str, orig_info: MediaInfo, url: str, r=runnable) -> None:
+            self._active_runnables.discard(r)
+            with self._state_lock:
+                self._pending_art_keys.discard(key)
+                current_id = self._last_identity
+                current_start = self._last_start
+            if self._halt.is_set():
+                return
+            if url:
+                clean_label = f"{sanitize_artist(orig_info.artist)} - {sanitize_title(orig_info.title)}".strip(" -")
+                self.message.emit("info", f"album cover matched ({TARGET_ARTWORK_SIZE}): {clean_label}")
+                if current_id is not None and current_id[:4] == orig_info.track_key:
+                    enriched = replace(orig_info, artwork_url=url, start_at=current_start)
+                    self._publish(enriched)
+                self._poke()
+            else:
+                self.message.emit(
+                    "info",
+                    f"cover score below threshold or unavailable for '{orig_info.title}', using fallback icon",
+                )
+
+        runnable.signals.finished.connect(_on_done)
+        self._pool.start(runnable)
 
     def _publish(self, info: MediaInfo | None) -> None:
-        if info is None:
-            if self._last_identity is not None:
-                self._last_identity, self._last_start = None, None
-                self.media_changed.emit(None)
-            return
-        changed = info.identity != self._last_identity
-        sought = (
-            info.start_at is not None
-            and self._last_start is not None
-            and abs(info.start_at - self._last_start) > SEEK_TOLERANCE_SECONDS
-        )
-        if changed or sought:
-            self._last_identity, self._last_start = info.identity, info.start_at
-            self.media_changed.emit(info)
+        with self._state_lock:
+            if info is None:
+                if self._last_identity is not None:
+                    self._last_identity, self._last_start = None, None
+                    self.media_changed.emit(None)
+                return
+            changed = info.identity != self._last_identity
+            sought = (
+                info.start_at is not None
+                and self._last_start is not None
+                and abs(info.start_at - self._last_start) > SEEK_TOLERANCE_SECONDS
+            )
+            if changed or sought:
+                self._last_identity, self._last_start = info.identity, info.start_at
+                self.media_changed.emit(info)

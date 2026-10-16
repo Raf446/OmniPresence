@@ -417,7 +417,8 @@ class ProcessWatcher(QThread):
     scanned = Signal(object)
     message = Signal(str, str)
 
-    MIN_CYCLE_SECONDS = 0.2
+    MIN_CYCLE_SECONDS = 0.04
+    FULL_SCAN_INTERVAL = 0.85
 
     def __init__(self, rulebook: RuleBook, interval: float, build_linger: float, parent=None) -> None:
         super().__init__(parent)
@@ -433,10 +434,14 @@ class ProcessWatcher(QThread):
         self._sticky: dict[str, tuple[Activity, float, str]] = {}
         self._reset_sticky = False
         self._last_error = ""
+        self._last_full_scan = 0.0
+        self._last_build: BuildInfo | None = None
+        self._last_telemetry: TelemetrySample | None = None
 
     def on_rules_changed(self, rulebook: RuleBook, _error: str = "") -> None:
         self._book = rulebook
         self._reset_sticky = True
+        self._last_full_scan = 0.0
         self._wake.set()
 
     def set_interval(self, interval: float) -> None:
@@ -455,6 +460,8 @@ class ProcessWatcher(QThread):
         hook.start()
         try:
             while not self._halt.is_set():
+                self._wake.clear()
+                t0 = time.monotonic()
                 try:
                     self.scanned.emit(self._scan())
                     self._last_error = ""
@@ -463,9 +470,11 @@ class ProcessWatcher(QThread):
                     if text != self._last_error:
                         self._last_error = text
                         self.message.emit("error", text)
+                # Wait for either the polling interval or an instant WinEvent foreground wakeup
                 self._wake.wait(self._interval)
-                self._wake.clear()
-                self._halt.wait(self.MIN_CYCLE_SECONDS)
+                elapsed = time.monotonic() - t0
+                if elapsed < self.MIN_CYCLE_SECONDS and not self._halt.is_set():
+                    self._halt.wait(self.MIN_CYCLE_SECONDS - elapsed)
         finally:
             hook.stop()
 
@@ -476,11 +485,22 @@ class ProcessWatcher(QThread):
             self._sticky.clear()
             self._reset_sticky = False
 
-        self._table.refresh()
+        # Fast-path on instant WinEvent wakeups: only refresh full PID table / compiler / telemetry every FULL_SCAN_INTERVAL
+        need_full = (
+            self._last_telemetry is None
+            or (now - self._last_full_scan) >= min(self.FULL_SCAN_INTERVAL, self._interval)
+        )
+        if need_full:
+            self._table.refresh()
+            self._last_build = self._compiler.poll(self._table.records(), now)
+            self._last_telemetry = self._telemetry.sample()
+            self._last_full_scan = now
+
         window = WindowProbe.foreground(self._table)
         idle = WindowProbe.idle_seconds()
-        build = self._compiler.poll(self._table.records(), now)
-        telemetry = self._telemetry.sample()
+        build = self._last_build
+        telemetry = self._last_telemetry
+        assert telemetry is not None
         shared = telemetry.as_variables()
 
         activities: list[Activity] = []
