@@ -1,10 +1,19 @@
-"""Frameless main window with custom titlebar, Discord card preview, rules table, and activity log."""
+"""Frameless main window with custom titlebar, pulsating IPC glow dot, live CPU/RAM bar meters, Discord card preview, rules table, and activity log."""
 from __future__ import annotations
 
+import math
 from datetime import datetime
 
-from PySide6.QtCore import QPoint, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QMouseEvent, QPainter, QTextCursor
+from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, QTimer, Signal
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QLinearGradient,
+    QMouseEvent,
+    QPainter,
+    QRadialGradient,
+    QTextCursor,
+)
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -18,28 +27,121 @@ from PySide6.QtWidgets import (
 
 from core.state_manager import LogEntry, StateManager
 from extractors.telemetry import TelemetrySample
-from ui import DANGER, STATUS_COLORS, app_icon, mono_font, ui_font
+from ui import ACCENT, DANGER, STATUS_COLORS, SUCCESS, WARN, app_icon, mono_font, ui_font
 from ui.components import DiscordPreview, QuickControls, RuleListWidget
 
 
 class StatusDot(QWidget):
-    """Solid status indicator dot inside the custom titlebar."""
+    """Pulsating glowing status indicator dot inside the custom titlebar."""
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setFixedSize(10, 10)
-        self._color = QColor(DANGER)
+        self.setFixedSize(16, 16)
+        self._status = "disconnected"
+        self._color = QColor(STATUS_COLORS["disconnected"])
+        self._phase = 0.0
+
+        self._timer = QTimer(self)
+        self._timer.setInterval(60)
+        self._timer.timeout.connect(self._tick)
+        self._timer.start()
+
+    def _tick(self) -> None:
+        self._phase = (self._phase + 0.16) % (math.pi * 2)
+        self.update()
 
     def set_status(self, status: str) -> None:
-        self._color = QColor(STATUS_COLORS.get(status, DANGER))
+        self._status = status.lower()
+        self._color = QColor(STATUS_COLORS.get(self._status, DANGER))
         self.update()
 
     def paintEvent(self, _event) -> None:  # noqa: N802
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setPen(Qt.PenStyle.NoPen)
+
+        center = QPointF(self.width() / 2, self.height() / 2)
+        pulse = 0.5 + 0.5 * math.sin(self._phase)
+
+        # Outer radial glow (pulsates strongly when connected or connecting)
+        if self._status in ("connected", "connecting", "reconnecting"):
+            radius = 5.5 + 2.3 * pulse
+            alpha = int(95 + 95 * pulse)
+        else:
+            radius = 5.5
+            alpha = 65
+
+        glow = QRadialGradient(center, radius)
+        c_inner = QColor(self._color)
+        c_inner.setAlpha(alpha)
+        glow.setColorAt(0.0, c_inner)
+        c_outer = QColor(self._color)
+        c_outer.setAlpha(0)
+        glow.setColorAt(1.0, c_outer)
+        painter.setBrush(glow)
+        painter.drawEllipse(center, radius, radius)
+
+        # Crisp core dot
         painter.setBrush(self._color)
-        painter.drawEllipse(QRectF(1, 1, 8, 8))
+        painter.drawEllipse(center, 3.6, 3.6)
+
+
+class TelemetryBar(QWidget):
+    """Compact visual micro-meter for CPU or RAM load with smooth fill and dynamic threshold color."""
+
+    def __init__(self, label: str, base_color: str = ACCENT, parent=None) -> None:
+        super().__init__(parent)
+        self._label = label
+        self._base_color = QColor(base_color)
+        self._percent = 0.0
+        self._display_percent = 0.0
+        self._detail = "--%"
+        self.setFixedSize(138, 22)
+
+    def set_metric(self, percent: float, detail: str) -> None:
+        self._percent = min(max(percent, 0.0), 100.0)
+        self._display_percent += (self._percent - self._display_percent) * 0.55
+        self._detail = detail
+        self.setToolTip(f"{self._label}: {detail}")
+        self.update()
+
+    def _active_color(self) -> QColor:
+        if self._percent >= 85.0:
+            return QColor(DANGER)
+        if self._percent >= 65.0:
+            return QColor(WARN)
+        return self._base_color
+
+    def paintEvent(self, _event) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # Label + value on top row
+        painter.setFont(mono_font(10, QFont.Weight.DemiBold))
+        painter.setPen(QColor("#94a0b8"))
+        painter.drawText(QRectF(0, 0, 34, 13), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self._label)
+
+        painter.setPen(QColor("#eef2f8"))
+        painter.drawText(
+            QRectF(34, 0, self.width() - 34, 13),
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+            self._detail,
+        )
+
+        # Progress bar track on bottom row
+        bar_rect = QRectF(0, 15, self.width(), 5)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(255, 255, 255, 22))
+        painter.drawRoundedRect(bar_rect, 2.5, 2.5)
+
+        fill_w = (self.width() * (self._display_percent / 100.0))
+        if fill_w > 1.0:
+            col = self._active_color()
+            grad = QLinearGradient(0, 0, fill_w, 0)
+            grad.setColorAt(0.0, col.darker(115))
+            grad.setColorAt(1.0, col.lighter(120))
+            painter.setBrush(grad)
+            painter.drawRoundedRect(QRectF(0, 15, max(4.0, fill_w), 5), 2.5, 2.5)
 
 
 class CustomTitleBar(QFrame):
@@ -51,60 +153,81 @@ class CustomTitleBar(QFrame):
         super().__init__(window, objectName="TitleBar")
         self._window = window
         self._drag_offset: QPoint | None = None
-        self.setFixedHeight(40)
+        self.setFixedHeight(44)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(14, 0, 10, 0)
         layout.setSpacing(10)
 
         brand = QLabel(app_name, objectName="TitleBrand")
-        brand.setFont(ui_font(13, QFont.Weight.DemiBold))
+        brand.setFont(ui_font(13, QFont.Weight.Bold))
         layout.addWidget(brand)
 
-        # Discord IPC connection badge
-        pill = QFrame(objectName="StatusPill")
-        pill_layout = QHBoxLayout(pill)
-        pill_layout.setContentsMargins(8, 2, 8, 2)
+        ver = QLabel("v1.0.0", objectName="TitleVersionBadge")
+        ver.setFont(mono_font(10, QFont.Weight.DemiBold))
+        layout.addWidget(ver)
+
+        # Discord IPC connection badge with pulsating status dot
+        self._pill = QFrame(objectName="StatusPill")
+        self._pill.setProperty("status", "disconnected")
+        pill_layout = QHBoxLayout(self._pill)
+        pill_layout.setContentsMargins(8, 2, 10, 2)
         pill_layout.setSpacing(6)
-        self._dot = StatusDot(pill)
+        self._dot = StatusDot(self._pill)
         self._status_text = QLabel("IPC Disconnected", objectName="StatusText")
-        self._status_text.setFont(mono_font(11))
+        self._status_text.setFont(mono_font(11, QFont.Weight.DemiBold))
         pill_layout.addWidget(self._dot)
         pill_layout.addWidget(self._status_text)
-        layout.addWidget(pill)
+        layout.addWidget(self._pill)
 
         layout.addStretch(1)
 
-        self._telemetry_label = QLabel("CPU --%  |  RAM --%", objectName="TitleTelemetry")
-        self._telemetry_label.setFont(mono_font(11))
-        layout.addWidget(self._telemetry_label)
+        # Live Telemetry micro-stats cluster (CPU & RAM bar meters)
+        telemetry_cluster = QFrame(objectName="TelemetryCluster")
+        tc_layout = QHBoxLayout(telemetry_cluster)
+        tc_layout.setContentsMargins(10, 3, 10, 3)
+        tc_layout.setSpacing(14)
+        self._cpu_bar = TelemetryBar("CPU", "#2979ff", telemetry_cluster)
+        self._ram_bar = TelemetryBar("RAM", "#b388ff", telemetry_cluster)
+        tc_layout.addWidget(self._cpu_bar)
+        tc_layout.addWidget(self._ram_bar)
+        layout.addWidget(telemetry_cluster)
 
         min_btn = QPushButton("\u2013", objectName="TitleButton")
         min_btn.setFont(mono_font(12, QFont.Weight.Bold))
         min_btn.setToolTip("Minimize")
+        min_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         min_btn.clicked.connect(self.minimize_clicked.emit)
         layout.addWidget(min_btn)
 
         max_btn = QPushButton("\u25a1", objectName="TitleButton")
         max_btn.setFont(mono_font(11))
         max_btn.setToolTip("Maximize / Restore")
+        max_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         max_btn.clicked.connect(self.maximize_clicked.emit)
         layout.addWidget(max_btn)
 
         close_btn = QPushButton("\u00d7", objectName="TitleCloseButton")
         close_btn.setFont(mono_font(14, QFont.Weight.Bold))
         close_btn.setToolTip("Hide to system tray (or close)")
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         close_btn.clicked.connect(self.close_clicked.emit)
         layout.addWidget(close_btn)
 
     def set_connection(self, status: str, detail: str) -> None:
-        self._dot.set_status(status)
+        norm = status.lower()
+        self._dot.set_status(norm)
+        self._pill.setProperty("status", norm)
+        self._pill.style().unpolish(self._pill)
+        self._pill.style().polish(self._pill)
         label = detail or f"IPC {status.capitalize()}"
         self._status_text.setText(label)
 
     def set_telemetry(self, sample: TelemetrySample) -> None:
-        self._telemetry_label.setText(
-            f"CPU {sample.cpu_percent:4.1f}%  |  RAM {sample.ram_used_gb:.1f}/{sample.ram_total_gb:.1f} GB ({sample.ram_percent:.0f}%)"
+        self._cpu_bar.set_metric(sample.cpu_percent, f"{sample.cpu_percent:4.1f}%")
+        self._ram_bar.set_metric(
+            sample.ram_percent,
+            f"{sample.ram_used_gb:.1f}/{sample.ram_total_gb:.0f}G ({sample.ram_percent:.0f}%)",
         )
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
@@ -186,8 +309,8 @@ class MainWindow(QMainWindow):
             | Qt.WindowType.WindowMinimizeButtonHint
             | Qt.WindowType.WindowMaximizeButtonHint
         )
-        self.resize(1060, 720)
-        self.setMinimumSize(900, 620)
+        self.resize(1100, 740)
+        self.setMinimumSize(940, 640)
 
         shell = QFrame(objectName="WindowShell")
         shell_layout = QVBoxLayout(shell)
@@ -207,7 +330,7 @@ class MainWindow(QMainWindow):
 
         # Left column: 1:1 Discord profile card mockup + priority tier strip
         left_col = QFrame(objectName="PanelCard")
-        left_col.setFixedWidth(340)
+        left_col.setFixedWidth(352)
         left_layout = QVBoxLayout(left_col)
         left_layout.setContentsMargins(12, 12, 12, 12)
         left_layout.setSpacing(10)

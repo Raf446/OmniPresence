@@ -14,13 +14,11 @@ from core.priority_engine import RuleBook, RuleError
 from core.process_watcher import ProcessWatcher
 from core.state_manager import Settings, StateManager
 from extractors.media_scrobbler import MediaScrobbler
-from ui import app_icon
+from ui import app_icon, resource_path, runtime_config_dir
 from ui.main_window import MainWindow
 from ui.tray_manager import TrayManager
 
-BASE_DIR = Path(__file__).resolve().parent
-CONFIG_DIR = BASE_DIR / "config"
-STYLES_PATH = BASE_DIR / "assets" / "styles" / "theme.qss"
+STYLES_PATH = resource_path(Path("assets") / "styles" / "theme.qss")
 
 
 def _sync_autostart(enabled: bool, script_path: Path) -> None:
@@ -32,7 +30,10 @@ def _sync_autostart(enabled: bool, script_path: Path) -> None:
         key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE) as key:
             if enabled:
-                cmd = f'"{sys.executable}" "{script_path}" --minimized'
+                if getattr(sys, "frozen", False):
+                    cmd = f'"{Path(sys.executable).resolve()}" --minimized'
+                else:
+                    cmd = f'"{Path(sys.executable).resolve()}" "{script_path}" --minimized'
                 winreg.SetValueEx(key, "OmniPresence", 0, winreg.REG_SZ, cmd)
             else:
                 try:
@@ -61,15 +62,17 @@ def main(argv: list[str] | None = None) -> int:
 
     app = QApplication(sys.argv)
     app.setApplicationName("OmniPresence")
-    app.setOrganizationName("OmniPresence")
+    app.setApplicationVersion("1.0.0")
+    app.setOrganizationName("Raf446")
     app.setQuitOnLastWindowClosed(False)
     app.setWindowIcon(app_icon("disconnected"))
 
     if STYLES_PATH.is_file():
         app.setStyleSheet(STYLES_PATH.read_text(encoding="utf-8"))
 
-    settings_path = CONFIG_DIR / "settings.json"
-    rules_path = CONFIG_DIR / "rules.json"
+    config_dir = runtime_config_dir()
+    settings_path = config_dir / "settings.json"
+    rules_path = config_dir / "rules.json"
 
     settings = Settings.load(settings_path)
     if args.client_id.strip():
@@ -85,7 +88,7 @@ def main(argv: list[str] | None = None) -> int:
         rulebook = RuleBook(())
 
     state = StateManager(settings, rules_path, rulebook, rule_error)
-    state.log("info", "boot", f"loaded {len(rulebook.rules)} rules from {rules_path.name}")
+    state.log("info", "boot", f"loaded {len(rulebook.rules)} rules from {rules_path}")
     if rule_error:
         state.log("error", "rules", rule_error)
 

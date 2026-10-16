@@ -1,7 +1,8 @@
-"""Live mockup of the Discord profile card plus the priority-tier strip."""
+"""Live mockup of the Discord profile card with banner, avatar status ring, smooth media progress, and color-coded priority tier pills."""
 from __future__ import annotations
 
 import getpass
+import math
 import time
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, QUrl
@@ -10,14 +11,17 @@ from PySide6.QtGui import (
     QDesktopServices,
     QFont,
     QFontMetrics,
+    QLinearGradient,
     QPainter,
     QPainterPath,
     QPen,
     QPixmap,
+    QRadialGradient,
 )
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import (
     QFrame,
+    QGraphicsDropShadowEffect,
     QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
@@ -28,17 +32,27 @@ from PySide6.QtWidgets import (
 )
 
 from core.priority_engine import PresenceData, Resolution, Tier
-from ui import ACCENT, DIM, MUTED, STATUS_COLORS, TEXT, mono_font, ui_font
+from ui import (
+    DIM,
+    MUTED,
+    STATUS_COLORS,
+    TEXT,
+    TIER_COLORS,
+    TIER_TITLES,
+    mono_font,
+    tier_color,
+    ui_font,
+)
 
-DC_CARD = "#111214"
-DC_BOX = "#1e1f22"
-DC_BANNER = "#2e3036"
-DC_TILE = "#2b2d31"
-DC_BADGE = "#383a40"
-DC_ONLINE = "#23a55a"
-DC_TEXT = "#f2f3f5"
-DC_MUTED = "#b5bac1"
-DC_TRACK = "#4e5058"
+DC_CARD = "#13161d"
+DC_BOX = "#1b1f27"
+DC_BANNER_BASE = "#1c2230"
+DC_TILE = "#252b37"
+DC_BADGE = "#323948"
+DC_ONLINE = "#00e676"
+DC_TEXT = "#f4f7fc"
+DC_MUTED = "#adb8cc"
+DC_TRACK = "#323946"
 
 TYPE_VERBS = {0: "Playing", 2: "Listening to", 3: "Watching", 5: "Competing in"}
 
@@ -113,54 +127,143 @@ class ElidedLabel(QLabel):
 
 
 class ProfileHeader(QWidget):
-    BANNER = 64
+    """Mini gradient banner + rounded avatar with status ring and active tier pill."""
+
+    BANNER = 68
     AVATAR = 72
 
     def __init__(self, name: str, parent=None) -> None:
         super().__init__(parent)
         self._initial = (name[:1] or "?").upper()
+        self._accent = QColor(TIER_COLORS[4])
+        self._tier_badge = "STANDBY"
+        self._ipc_status = "disconnected"
         self.setFixedHeight(self.BANNER + self.AVATAR // 2 + 6)
         self.setAccessibleName("Profile header preview")
+
+    def set_tier(self, tier: Tier | None) -> None:
+        if tier is None:
+            self._accent = QColor(TIER_COLORS[6])
+            self._tier_badge = "STANDBY"
+        else:
+            self._accent = tier_color(int(tier))
+            self._tier_badge = f"P{int(tier)} \u00b7 {tier.label.upper()}"
+        self.update()
+
+    def set_ipc_status(self, status: str) -> None:
+        self._ipc_status = status
+        self.update()
 
     def paintEvent(self, _event) -> None:  # noqa: N802
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # Rounded top banner with layered tier accent glow
         clip = QPainterPath()
-        clip.addRoundedRect(QRectF(0, 0, self.width(), self.BANNER + 40), 10, 10)
+        clip.addRoundedRect(QRectF(0, 0, self.width(), self.BANNER + 36), 11, 11)
         painter.setClipPath(clip)
-        painter.fillRect(QRectF(0, 0, self.width(), self.BANNER), QColor(DC_BANNER))
+
+        banner_rect = QRectF(0, 0, self.width(), self.BANNER)
+        grad = QLinearGradient(0, 0, self.width(), self.BANNER)
+        c_top = QColor(self._accent)
+        c_top.setAlpha(95)
+        c_mid = QColor(DC_BANNER_BASE)
+        grad.setColorAt(0.0, c_top)
+        grad.setColorAt(0.65, c_mid)
+        grad.setColorAt(1.0, QColor("#151922"))
+        painter.fillRect(banner_rect, grad)
+
+        # Radial highlight in top-right of banner
+        radial = QRadialGradient(QPointF(self.width() * 0.85, 12), self.width() * 0.55)
+        glow_c = QColor(self._accent)
+        glow_c.setAlpha(70)
+        radial.setColorAt(0.0, glow_c)
+        glow_zero = QColor(self._accent)
+        glow_zero.setAlpha(0)
+        radial.setColorAt(1.0, glow_zero)
+        painter.fillRect(banner_rect, radial)
+
+        # Bottom banner hairline
+        painter.setPen(QPen(QColor(255, 255, 255, 24), 1))
+        painter.drawLine(0, self.BANNER, self.width(), self.BANNER)
+
+        # Tier pill inside top-right of banner
+        painter.setFont(mono_font(10, QFont.Weight.DemiBold))
+        fm = QFontMetrics(painter.font())
+        pill_w = fm.horizontalAdvance(self._tier_badge) + 18
+        pill_rect = QRectF(self.width() - pill_w - 12, 12, pill_w, 20)
+        pill_bg = QColor(12, 14, 18, 185)
+        pill_border = QColor(self._accent)
+        pill_border.setAlpha(150)
+        painter.setPen(QPen(pill_border, 1))
+        painter.setBrush(pill_bg)
+        painter.drawRoundedRect(pill_rect, 10, 10)
+        painter.setPen(QColor(DC_TEXT))
+        painter.drawText(pill_rect, Qt.AlignmentFlag.AlignCenter, self._tier_badge)
+
         painter.setClipping(False)
 
+        # Avatar cutout + ring + gradient circle
         cx, cy = 16 + self.AVATAR / 2 + 6, self.BANNER + 2
         ring = self.AVATAR + 12
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(DC_CARD))
         painter.drawEllipse(QPointF(cx, cy), ring / 2, ring / 2)
-        painter.setBrush(QColor(DC_TRACK))
+
+        av_grad = QLinearGradient(cx - self.AVATAR / 2, cy - self.AVATAR / 2, cx + self.AVATAR / 2, cy + self.AVATAR / 2)
+        av_top = QColor(self._accent).darker(125)
+        av_bot = QColor("#252b38")
+        av_grad.setColorAt(0.0, av_top)
+        av_grad.setColorAt(1.0, av_bot)
+        ring_pen = QPen(QColor(self._accent), 1.6)
+        painter.setPen(ring_pen)
+        painter.setBrush(av_grad)
         painter.drawEllipse(QPointF(cx, cy), self.AVATAR / 2, self.AVATAR / 2)
+
         painter.setPen(QColor(DC_TEXT))
-        painter.setFont(ui_font(30, QFont.Weight.DemiBold))
+        painter.setFont(ui_font(28, QFont.Weight.Bold))
         painter.drawText(QRectF(cx - 40, cy - 40, 80, 80), Qt.AlignmentFlag.AlignCenter, self._initial)
 
+        # Status dot with outer cutout frame and radial glow
         dot = QPointF(cx + self.AVATAR / 2 - 8, cy + self.AVATAR / 2 - 8)
+        status_col = QColor(STATUS_COLORS.get(self._ipc_status, DC_ONLINE))
+        if self._ipc_status == "connected":
+            status_col = QColor(DC_ONLINE)
+
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(DC_CARD))
-        painter.drawEllipse(dot, 14, 14)
-        painter.setBrush(QColor(DC_ONLINE))
-        painter.drawEllipse(dot, 9, 9)
+        painter.drawEllipse(dot, 13, 13)
+
+        dot_glow = QRadialGradient(dot, 12)
+        glow_start = QColor(status_col)
+        glow_start.setAlpha(120)
+        dot_glow.setColorAt(0.0, glow_start)
+        glow_end = QColor(status_col)
+        glow_end.setAlpha(0)
+        dot_glow.setColorAt(1.0, glow_end)
+        painter.setBrush(dot_glow)
+        painter.drawEllipse(dot, 12, 12)
+
+        painter.setBrush(status_col)
+        painter.drawEllipse(dot, 8.5, 8.5)
 
 
 class ArtworkTile(QWidget):
     """Large image with the small badge overlapping its corner, as Discord lays them out."""
 
-    LARGE = 60
+    LARGE = 62
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setFixedSize(68, 68)
+        self.setFixedSize(70, 70)
         self._large = ""
         self._small = ""
+        self._accent = QColor(TIER_COLORS[4])
         self.setAccessibleName("Presence artwork preview")
+
+    def set_accent(self, color: QColor) -> None:
+        self._accent = color
+        self.update()
 
     def set_images(self, large: str | None, small: str | None, large_text: str | None, small_text: str | None) -> None:
         self._large, self._small = large or "", small or ""
@@ -180,7 +283,7 @@ class ArtworkTile(QWidget):
     def _glyph(key: str, length: int) -> str:
         if key.lower().startswith(("http://", "https://")):
             return ""
-        return key[:length].upper()
+        return (key[:length] or "OP").upper()
 
     def paintEvent(self, _event) -> None:  # noqa: N802
         painter = QPainter(self)
@@ -189,25 +292,38 @@ class ArtworkTile(QWidget):
 
         tile = QRectF(0, 0, self.LARGE, self.LARGE)
         path = QPainterPath()
-        path.addRoundedRect(tile, 8, 8)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(DC_TILE))
+        path.addRoundedRect(tile, 10, 10)
+
+        tile_grad = QLinearGradient(0, 0, self.LARGE, self.LARGE)
+        c1 = QColor(self._accent)
+        c1.setAlpha(48)
+        tile_grad.setColorAt(0.0, c1)
+        tile_grad.setColorAt(1.0, QColor(DC_TILE))
+
+        border_col = QColor(self._accent)
+        border_col.setAlpha(90)
+        painter.setPen(QPen(border_col, 1))
+        painter.setBrush(tile_grad)
         painter.drawPath(path)
+
         large = self._pixmap(self._large)
         if large is not None:
             painter.setClipPath(path)
             scaled = large.scaled(
-                self.LARGE, self.LARGE, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation
+                self.LARGE,
+                self.LARGE,
+                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                Qt.TransformationMode.SmoothTransformation,
             )
             painter.drawPixmap(0, 0, scaled)
             painter.setClipping(False)
         else:
-            painter.setPen(QColor(DC_MUTED))
-            painter.setFont(mono_font(15, QFont.Weight.DemiBold))
+            painter.setPen(QColor(DC_TEXT))
+            painter.setFont(mono_font(15, QFont.Weight.Bold))
             painter.drawText(tile, Qt.AlignmentFlag.AlignCenter, self._glyph(self._large, 2))
 
         if self._small:
-            center = QPointF(self.LARGE - 6, self.LARGE - 6)
+            center = QPointF(self.LARGE - 5, self.LARGE - 5)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(DC_BOX))
             painter.drawEllipse(center, 14, 14)
@@ -215,6 +331,7 @@ class ArtworkTile(QWidget):
             badge = QPainterPath()
             badge.addEllipse(center, 11, 11)
             painter.setBrush(QColor(DC_BADGE))
+            painter.setPen(QPen(QColor(self._accent), 1))
             painter.drawPath(badge)
             if small is not None:
                 painter.setClipPath(badge)
@@ -225,69 +342,164 @@ class ArtworkTile(QWidget):
                 )
                 painter.setClipping(False)
             else:
-                painter.setPen(QColor(DC_MUTED))
-                painter.setFont(mono_font(10, QFont.Weight.DemiBold))
-                painter.drawText(QRectF(center.x() - 11, center.y() - 11, 22, 22), Qt.AlignmentFlag.AlignCenter, self._glyph(self._small, 1))
+                painter.setPen(QColor(DC_TEXT))
+                painter.setFont(mono_font(9, QFont.Weight.Bold))
+                painter.drawText(
+                    QRectF(center.x() - 11, center.y() - 11, 22, 22),
+                    Qt.AlignmentFlag.AlignCenter,
+                    self._glyph(self._small, 1),
+                )
 
 
 class ProgressTrack(QWidget):
+    """Smooth animated media duration progress bar with accent gradient and playhead."""
+
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setFixedHeight(4)
+        self.setFixedHeight(8)
         self._fraction = 0.0
+        self._target = 0.0
+        self._accent = QColor(TIER_COLORS[5])
+
+    def set_accent(self, color: QColor) -> None:
+        self._accent = color
+        self.update()
 
     def set_fraction(self, fraction: float) -> None:
-        self._fraction = min(max(fraction, 0.0), 1.0)
+        clamped = min(max(fraction, 0.0), 1.0)
+        self._target = clamped
+        if abs(self._target - self._fraction) > 0.15:
+            self._fraction = self._target
+        else:
+            self._fraction += (self._target - self._fraction) * 0.35
         self.update()
 
     def paintEvent(self, _event) -> None:  # noqa: N802
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setPen(Qt.PenStyle.NoPen)
+
+        track_y = 2.0
+        track_h = 4.0
         painter.setBrush(QColor(DC_TRACK))
-        painter.drawRoundedRect(QRectF(0, 0, self.width(), 4), 2, 2)
-        painter.setBrush(QColor(DC_TEXT))
-        painter.drawRoundedRect(QRectF(0, 0, self.width() * self._fraction, 4), 2, 2)
+        painter.drawRoundedRect(QRectF(0, track_y, self.width(), track_h), 2, 2)
+
+        fill_w = max(4.0, self.width() * self._fraction) if self._fraction > 0 else 0.0
+        if fill_w > 0:
+            grad = QLinearGradient(0, 0, fill_w, 0)
+            grad.setColorAt(0.0, self._accent)
+            grad.setColorAt(1.0, QColor(DC_TEXT))
+            painter.setBrush(grad)
+            painter.drawRoundedRect(QRectF(0, track_y, fill_w, track_h), 2, 2)
+
+            knob_x = min(max(fill_w, 3.0), self.width() - 3.0)
+            painter.setBrush(QColor(DC_TEXT))
+            painter.drawEllipse(QPointF(knob_x, track_y + track_h / 2), 3.2, 3.2)
 
 
 class TierStrip(QWidget):
-    """Six micro-badges for P1..P6: filled for the winner, brighter when a candidate is live."""
+    """Six color-coded pill badges for P1..P6 with pulsating indicator on P2 (Compiler Active)."""
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setFixedHeight(42)
+        self.setFixedHeight(48)
         self._winner: Tier | None = None
         self._live: frozenset[Tier] = frozenset()
+        self._phase = 0.0
         self.setAccessibleName("Priority tiers")
+
+        self._pulse_timer = QTimer(self)
+        self._pulse_timer.setInterval(60)
+        self._pulse_timer.timeout.connect(self._advance_pulse)
+        self._pulse_timer.start()
+
+    def _advance_pulse(self) -> None:
+        self._phase = (self._phase + 0.18) % (math.pi * 2)
+        if self._winner == Tier.BUILD or Tier.BUILD in self._live:
+            self.update()
 
     def set_state(self, winner: Tier | None, live: frozenset[Tier]) -> None:
         self._winner, self._live = winner, live
-        names = ", ".join(f"P{int(t)} {t.label}" for t in sorted(live)) or "none"
-        self.setToolTip(f"Live tiers: {names}")
+        names = ", ".join(f"P{int(t)} {TIER_TITLES.get(int(t), t.label)}" for t in sorted(live)) or "none"
+        self.setToolTip(f"Active Priority Hierarchy | Live candidates: {names}")
         self.update()
 
     def paintEvent(self, _event) -> None:  # noqa: N802
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         tiers = list(Tier)
-        gap = 4
+        gap = 5
         width = (self.width() - gap * (len(tiers) - 1)) / len(tiers)
+        pulse = 0.5 + 0.5 * math.sin(self._phase)
+
         for index, tier in enumerate(tiers):
-            cell = QRectF(index * (width + gap) + 0.5, 0.5, width - 1, self.height() - 1)
-            if tier == self._winner:
-                fill, edge, ink = QColor(106, 169, 255, 36), QColor(ACCENT), QColor(TEXT)
-            elif tier in self._live:
-                fill, edge, ink = QColor(255, 255, 255, 8), QColor(255, 255, 255, 40), QColor(TEXT)
+            cell = QRectF(index * (width + gap) + 0.5, 1.0, width - 1, self.height() - 2.0)
+            base_color = tier_color(int(tier))
+            is_winner = tier == self._winner
+            is_live = tier in self._live
+
+            if is_winner:
+                fill = QColor(base_color)
+                fill.setAlpha(58 if tier != Tier.BUILD else int(45 + 45 * pulse))
+                edge = QColor(base_color)
+                edge.setAlpha(235)
+                ink = QColor(TEXT)
+                sub_ink = QColor(base_color).lighter(135)
+                pen_w = 1.5
+            elif is_live:
+                fill = QColor(base_color)
+                fill.setAlpha(26)
+                edge = QColor(base_color)
+                edge.setAlpha(130)
+                ink = QColor(base_color).lighter(125)
+                sub_ink = QColor(MUTED)
+                pen_w = 1.1
             else:
-                fill, edge, ink = QColor(0, 0, 0, 0), QColor(255, 255, 255, 13), QColor(DIM)
-            painter.setPen(QPen(edge, 1))
+                fill = QColor(20, 24, 32, 180)
+                edge = QColor(base_color)
+                edge.setAlpha(55)
+                ink = QColor( base_color )
+                ink.setAlpha(175)
+                sub_ink = QColor(DIM)
+                pen_w = 1.0
+
+            painter.setPen(QPen(edge, pen_w))
             painter.setBrush(fill)
-            painter.drawRoundedRect(cell, 4, 4)
+            painter.drawRoundedRect(cell, 8, 8)
+
+            # Top accent color dot inside each pill (pulsating for P2 Compiler Active)
+            dot_center = QPointF(cell.right() - 8, cell.top() + 8)
+            dot_color = QColor(base_color)
+            if tier == Tier.BUILD and (is_winner or is_live):
+                halo = QRadialGradient(dot_center, 7.0)
+                hc = QColor(base_color)
+                hc.setAlpha(int(180 * pulse))
+                halo.setColorAt(0.0, hc)
+                hc_end = QColor(base_color)
+                hc_end.setAlpha(0)
+                halo.setColorAt(1.0, hc_end)
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(halo)
+                painter.drawEllipse(dot_center, 7.0, 7.0)
+            dot_color.setAlpha(255 if (is_winner or is_live) else 130)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(dot_color)
+            painter.drawEllipse(dot_center, 2.8, 2.8)
+
             painter.setPen(ink)
-            painter.setFont(mono_font(12, QFont.Weight.DemiBold))
-            painter.drawText(QRectF(cell.x(), cell.y() + 5, cell.width(), 16), Qt.AlignmentFlag.AlignCenter, f"P{int(tier)}")
-            painter.setFont(ui_font(10))
-            painter.drawText(QRectF(cell.x(), cell.y() + 21, cell.width(), 14), Qt.AlignmentFlag.AlignCenter, tier.label)
+            painter.setFont(mono_font(11, QFont.Weight.Bold))
+            painter.drawText(
+                QRectF(cell.x() + 4, cell.y() + 5, cell.width() - 10, 16),
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                f"P{int(tier)}",
+            )
+            painter.setPen(sub_ink)
+            painter.setFont(ui_font(10, QFont.Weight.DemiBold if is_winner else QFont.Weight.Normal))
+            painter.drawText(
+                QRectF(cell.x() + 2, cell.y() + 23, cell.width() - 4, 16),
+                Qt.AlignmentFlag.AlignCenter,
+                tier.label,
+            )
 
 
 class DiscordPreview(QWidget):
@@ -302,29 +514,45 @@ class DiscordPreview(QWidget):
         self._buttons: list[QPushButton] = []
 
         user = getpass.getuser()
-        card = QFrame(objectName="DiscordCard")
-        card_layout = QVBoxLayout(card)
+        self._card = QFrame(objectName="DiscordCard")
+        self._card_shadow = QGraphicsDropShadowEffect(self._card)
+        self._card_shadow.setBlurRadius(24)
+        self._card_shadow.setOffset(0, 4)
+        self._card_shadow.setColor(QColor(41, 121, 255, 45))
+        self._card.setGraphicsEffect(self._card_shadow)
+
+        card_layout = QVBoxLayout(self._card)
         card_layout.setContentsMargins(0, 0, 0, 0)
         card_layout.setSpacing(0)
-        card_layout.addWidget(ProfileHeader(user))
+        self._header = ProfileHeader(user)
+        card_layout.addWidget(self._header)
 
         identity = QVBoxLayout()
-        identity.setContentsMargins(16, 0, 16, 12)
-        identity.setSpacing(0)
+        identity.setContentsMargins(16, 2, 16, 10)
+        identity.setSpacing(2)
+
+        name_row = QHBoxLayout()
+        name_row.setSpacing(8)
         name = QLabel(user, objectName="DcName")
-        name.setFont(ui_font(18, QFont.Weight.Bold))
-        handle = QLabel(user.lower(), objectName="DcHandle")
-        handle.setFont(ui_font(13))
-        identity.addWidget(name)
+        name.setFont(ui_font(17, QFont.Weight.Bold))
+        name_row.addWidget(name)
+        self._role_pill = QLabel("Rich Presence", objectName="DcBadgePill")
+        self._role_pill.setFont(mono_font(10, QFont.Weight.DemiBold))
+        name_row.addWidget(self._role_pill)
+        name_row.addStretch(1)
+        identity.addLayout(name_row)
+
+        handle = QLabel(f"@{user.lower()} \u00b7 OmniPresence Engine", objectName="DcHandle")
+        handle.setFont(ui_font(12))
         identity.addWidget(handle)
         card_layout.addLayout(identity)
 
         self._box = QFrame(objectName="DiscordBox")
         box_layout = QVBoxLayout(self._box)
         box_layout.setContentsMargins(14, 12, 14, 14)
-        box_layout.setSpacing(10)
+        box_layout.setSpacing(9)
         self._section = QLabel("", objectName="DcSection")
-        self._section.setFont(ui_font(12, QFont.Weight.DemiBold))
+        self._section.setFont(ui_font(11, QFont.Weight.Bold))
         box_layout.addWidget(self._section)
 
         self._row = QWidget()
@@ -334,13 +562,13 @@ class DiscordPreview(QWidget):
         self._art = ArtworkTile()
         row.addWidget(self._art, 0, Qt.AlignmentFlag.AlignTop)
         text = QVBoxLayout()
-        text.setSpacing(1)
+        text.setSpacing(2)
         self._details = ElidedLabel(objectName="DcDetails")
-        self._details.setFont(ui_font(14, QFont.Weight.DemiBold))
+        self._details.setFont(ui_font(13, QFont.Weight.DemiBold))
         self._state = ElidedLabel(objectName="DcState")
-        self._state.setFont(ui_font(13))
+        self._state.setFont(ui_font(12))
         self._clock = ElidedLabel(objectName="DcClock")
-        self._clock.setFont(ui_font(13))
+        self._clock.setFont(mono_font(11))
         for label in (self._details, self._state, self._clock):
             text.addWidget(label)
         text.addStretch(1)
@@ -349,7 +577,7 @@ class DiscordPreview(QWidget):
 
         self._progress_wrap = QWidget()
         progress = QVBoxLayout(self._progress_wrap)
-        progress.setContentsMargins(0, 0, 0, 0)
+        progress.setContentsMargins(0, 2, 0, 0)
         progress.setSpacing(4)
         self._track = ProgressTrack()
         progress.addWidget(self._track)
@@ -357,7 +585,7 @@ class DiscordPreview(QWidget):
         self._time_left = QLabel("00:00", objectName="DcClock")
         self._time_right = QLabel("00:00", objectName="DcClock")
         for label in (self._time_left, self._time_right):
-            label.setFont(ui_font(11))
+            label.setFont(mono_font(10))
         times.addWidget(self._time_left)
         times.addStretch(1)
         times.addWidget(self._time_right)
@@ -365,12 +593,12 @@ class DiscordPreview(QWidget):
         box_layout.addWidget(self._progress_wrap)
 
         self._button_host = QVBoxLayout()
-        self._button_host.setSpacing(8)
+        self._button_host.setSpacing(6)
         box_layout.addLayout(self._button_host)
 
         self._empty = QLabel("", objectName="DcEmpty")
         self._empty.setWordWrap(True)
-        self._empty.setFont(ui_font(13))
+        self._empty.setFont(ui_font(12))
         box_layout.addWidget(self._empty)
 
         self._fade = QGraphicsOpacityEffect(self._box)
@@ -382,7 +610,7 @@ class DiscordPreview(QWidget):
 
         self._note = QLabel("", objectName="PreviewNote")
         self._note.setWordWrap(True)
-        self._note.setFont(ui_font(12))
+        self._note.setFont(ui_font(11))
         self._strip = TierStrip()
         self._reason = QLabel("", objectName="PreviewReason")
         self._reason.setWordWrap(True)
@@ -390,15 +618,16 @@ class DiscordPreview(QWidget):
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(10)
-        root.addWidget(card)
+        root.setSpacing(9)
+        root.addWidget(self._card)
         root.addWidget(self._note)
         root.addWidget(self._strip)
         root.addWidget(self._reason)
         root.addStretch(1)
 
+        # 100ms tick for smooth media progress bar interpolation
         self._timer = QTimer(self)
-        self._timer.setInterval(1000)
+        self._timer.setInterval(100)
         self._timer.timeout.connect(self._tick)
         self._timer.start()
 
@@ -412,15 +641,28 @@ class DiscordPreview(QWidget):
 
     def set_connection(self, status: str, detail: str) -> None:
         self._connection = (status, detail)
+        self._header.set_ipc_status(status)
         self._refresh_note()
 
     def set_resolution(self, resolution: Resolution | None) -> None:
         self._resolution = resolution
         if resolution is None:
+            self._header.set_tier(None)
             self._show_empty("Waiting for the first scan of running applications.")
             self._strip.set_state(None, frozenset())
-            self._reason.setText("")
+            self._reason.setText("Arbitration engine initializing...")
             return
+
+        self._header.set_tier(resolution.tier)
+        if resolution.tier is not None:
+            accent = tier_color(int(resolution.tier))
+            glow = QColor(accent)
+            glow.setAlpha(55)
+            self._card_shadow.setColor(glow)
+            self._art.set_accent(accent)
+            self._track.set_accent(accent)
+            self._role_pill.setText(TIER_TITLES.get(int(resolution.tier), resolution.tier.label))
+
         self._strip.set_state(resolution.tier, resolution.live_tiers)
         self._reason.setText(resolution.reason)
         if resolution.presence is None:
@@ -433,7 +675,7 @@ class DiscordPreview(QWidget):
         self._refresh_note()
 
     def _show_empty(self, text: str) -> None:
-        self._section.setText("No activity")
+        self._section.setText("NO ACTIVE PRESENCE")
         self._row.hide()
         self._progress_wrap.hide()
         self._clear_buttons()
@@ -443,7 +685,7 @@ class DiscordPreview(QWidget):
 
     def _show_presence(self, presence: PresenceData) -> None:
         verb = TYPE_VERBS.get(presence.activity_type, "Playing")
-        self._section.setText(f"{verb} {self._app_name}")
+        self._section.setText(f"{verb.upper()} {self._app_name.upper()}")
         self._empty.hide()
         self._row.show()
         self._art.set_images(presence.large_image, presence.small_image, presence.large_text, presence.small_text)
@@ -457,7 +699,7 @@ class DiscordPreview(QWidget):
         self._clear_buttons()
         for label, url in presence.buttons:
             button = QPushButton(label, objectName="DiscordButton")
-            button.setFont(ui_font(13, QFont.Weight.DemiBold))
+            button.setFont(ui_font(12, QFont.Weight.DemiBold))
             button.setToolTip(url)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.clicked.connect(lambda _=False, target=url: QDesktopServices.openUrl(QUrl(target)))
@@ -475,9 +717,9 @@ class DiscordPreview(QWidget):
         if self._start is None:
             return
         now = time.time()
-        elapsed = now - self._start
+        elapsed = max(0.0, now - self._start)
         if self._end is None:
-            self._clock.setText(f"{format_clock(elapsed)} elapsed")
+            self._clock.setText(f"\u23f1 {format_clock(elapsed)} elapsed")
             return
         total = max(self._end - self._start, 1.0)
         self._track.set_fraction(elapsed / total)
@@ -487,11 +729,11 @@ class DiscordPreview(QWidget):
     def _refresh_note(self) -> None:
         status, detail = self._connection
         if self._paused:
-            text, color = "Paused. The card below is a preview and nothing is sent to Discord.", MUTED
+            text, color = "Paused \u2014 preview active locally, IPC sync suspended.", MUTED
         elif status == "connected":
-            text, color = "Live on Discord. This card matches what others see.", MUTED
+            text, color = "\u25cf Live on Discord IPC \u2014 synced in real time.", STATUS_COLORS["connected"]
         else:
-            text = f"Not sent to Discord: {detail or status}. The card shows what would be sent."
+            text = f"\u25cb Offline preview ({detail or status}) \u2014 waiting for Discord IPC."
             color = STATUS_COLORS.get(status, MUTED)
         self._note.setText(text)
         self._note.setStyleSheet(f"color: {color};")

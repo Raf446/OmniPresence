@@ -1,21 +1,111 @@
-"""Interactive rule table displaying priority tiers, matching triggers, and live arbitration state."""
+"""Interactive rule table with custom-painted pill badges for Priority Tiers (P1-P6) and live arbitration state."""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QFont
+import math
+
+from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
 )
 
-from core.priority_engine import Resolution, RuleBook
-from ui import ACCENT, DIM, MUTED, SUCCESS, TEXT, WARN, mono_font, ui_font
+from core.priority_engine import Resolution, RuleBook, Tier
+from ui import DIM, MUTED, SUCCESS, TEXT, TIER_COLORS, WARN, mono_font, tier_color, ui_font
+
+ROLE_TIER_INT = Qt.ItemDataRole.UserRole + 1
+ROLE_RULE_ENABLED = Qt.ItemDataRole.UserRole + 2
+ROLE_STATE_CODE = Qt.ItemDataRole.UserRole + 3
+
+
+class PillBadgeDelegate(QStyledItemDelegate):
+    """Renders rounded color-coded pill badges in the Tier (col 1) and State (col 4) columns."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.pulse_phase = 0.0
+
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index) -> None:
+        col = index.column()
+        if col not in (1, 4):
+            super().paint(painter, option, index)
+            return
+
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # Draw row selection / hover background if active
+        if option.state & QStyle.StateFlag.State_Selected:
+            painter.fillRect(option.rect, QColor(41, 121, 255, 46))
+        elif option.state & QStyle.StateFlag.State_MouseOver:
+            painter.fillRect(option.rect, QColor(27, 33, 44, 210))
+
+        rect = QRectF(option.rect).adjusted(6, 5, -6, -5)
+        enabled = bool(index.data(ROLE_RULE_ENABLED))
+        text = str(index.data(Qt.ItemDataRole.DisplayRole) or "")
+
+        if col == 1:
+            tier_val = int(index.data(ROLE_TIER_INT) or 6)
+            base = tier_color(tier_val)
+            pulse = 0.5 + 0.5 * math.sin(self.pulse_phase)
+            fill = QColor(base)
+            fill.setAlpha(44 if enabled else 18)
+            border = QColor(base)
+            border.setAlpha(185 if enabled else 65)
+            ink = QColor(base).lighter(135) if enabled else QColor(DIM)
+
+            painter.setPen(QPen(border, 1.1))
+            painter.setBrush(fill)
+            painter.drawRoundedRect(rect, 9, 9)
+
+            # Left color dot inside the tier pill (pulsating for P2 Compiler Active)
+            dot_pt = QPointF(rect.left() + 10, rect.center().y())
+            dot_col = QColor(base)
+            if tier_val == int(Tier.BUILD) and enabled:
+                dot_col.setAlpha(int(120 + 135 * pulse))
+            else:
+                dot_col.setAlpha(235 if enabled else 90)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(dot_col)
+            painter.drawEllipse(dot_pt, 3.2, 3.2)
+
+            painter.setPen(ink)
+            painter.setFont(mono_font(10, QFont.Weight.Bold))
+            text_rect = QRectF(rect.left() + 18, rect.top(), rect.width() - 22, rect.height())
+            painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, text)
+        else:
+            state_code = str(index.data(ROLE_STATE_CODE) or "IDLE")
+            palette_map = {
+                "ACTIVE": QColor(SUCCESS),
+                "STANDBY": QColor(WARN),
+                "IDLE": QColor(TIER_COLORS[6]),
+                "DISABLED": QColor(DIM),
+            }
+            base = palette_map.get(state_code, QColor(MUTED))
+            fill = QColor(base)
+            fill.setAlpha(42 if state_code in ("ACTIVE", "STANDBY") else 20)
+            border = QColor(base)
+            border.setAlpha(170 if state_code in ("ACTIVE", "STANDBY") else 75)
+            ink = QColor(base).lighter(130) if state_code != "DISABLED" else QColor(DIM)
+
+            painter.setPen(QPen(border, 1.0))
+            painter.setBrush(fill)
+            painter.drawRoundedRect(rect, 9, 9)
+
+            painter.setPen(ink)
+            painter.setFont(mono_font(10, QFont.Weight.Bold))
+            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
+
+        painter.restore()
 
 
 class RuleListWidget(QFrame):
@@ -52,25 +142,39 @@ class RuleListWidget(QFrame):
         self._table.setHorizontalHeaderLabels(["On", "Tier", "Rule", "Trigger Scope", "State"])
         self._table.verticalHeader().setVisible(False)
         self._table.setAlternatingRowColors(True)
+        self._table.setMouseTracking(True)
+        self._table.viewport().setAttribute(Qt.WidgetAttribute.WA_Hover, True)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.setShowGrid(False)
 
+        self._delegate = PillBadgeDelegate(self._table)
+        self._table.setItemDelegate(self._delegate)
+
         h_header = self._table.horizontalHeader()
         h_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         self._table.setColumnWidth(0, 42)
         h_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        self._table.setColumnWidth(1, 86)
+        self._table.setColumnWidth(1, 102)
         h_header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         h_header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         h_header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
-        self._table.setColumnWidth(4, 96)
+        self._table.setColumnWidth(4, 100)
 
         self._table.itemChanged.connect(self._on_item_changed)
         layout.addWidget(self._table, 1)
 
+        self._pulse_timer = QTimer(self)
+        self._pulse_timer.setInterval(80)
+        self._pulse_timer.timeout.connect(self._tick_pulse)
+        self._pulse_timer.start()
+
         self.set_rulebook(rulebook, "")
+
+    def _tick_pulse(self) -> None:
+        self._delegate.pulse_phase = (self._delegate.pulse_phase + 0.22) % (math.pi * 2)
+        self._table.viewport().update()
 
     def set_rulebook(self, rulebook: RuleBook, error: str = "") -> None:
         self._book = rulebook
@@ -115,7 +219,9 @@ class RuleListWidget(QFrame):
 
             tier_item = QTableWidgetItem(f"P{int(rule.tier)} {rule.tier.label}")
             tier_item.setFont(mono_font(11, QFont.Weight.DemiBold))
-            tier_item.setForeground(QColor(TEXT if rule.enabled else DIM))
+            tier_item.setData(ROLE_TIER_INT, int(rule.tier))
+            tier_item.setData(ROLE_RULE_ENABLED, rule.enabled)
+            tier_item.setToolTip(f"Priority P{int(rule.tier)} ({rule.tier.label}) \u2014 Color {TIER_COLORS.get(int(rule.tier), '')}")
             self._table.setItem(row, 1, tier_item)
 
             name_item = QTableWidgetItem(rule.name)
@@ -133,8 +239,9 @@ class RuleListWidget(QFrame):
             state_item = QTableWidgetItem()
             state_item.setFont(mono_font(11, QFont.Weight.DemiBold))
             state_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            state_item.setData(ROLE_RULE_ENABLED, rule.enabled)
             self._table.setItem(row, 4, state_item)
-            self._table.setRowHeight(row, 32)
+            self._table.setRowHeight(row, 34)
 
         self._count_label.setText(f"{enabled_count}/{len(rules)} enabled")
         self._updating = False
@@ -142,33 +249,37 @@ class RuleListWidget(QFrame):
     def _refresh_states(self) -> None:
         self._updating = True
         for row, rule in enumerate(self._book.rules):
+            tier_item = self._table.item(row, 1)
+            if tier_item is not None:
+                tier_item.setData(ROLE_RULE_ENABLED, rule.enabled)
+
             state_item = self._table.item(row, 4)
             if state_item is None:
                 continue
+            state_item.setData(ROLE_RULE_ENABLED, rule.enabled)
             if not rule.enabled:
-                state_item.setText("DISABLED")
-                state_item.setForeground(QColor(DIM))
+                state_code = "DISABLED"
             elif rule.id == self._winner_id:
-                state_item.setText("ACTIVE")
-                state_item.setForeground(QColor(SUCCESS))
+                state_code = "ACTIVE"
             elif rule.id in self._live_ids:
-                state_item.setText("STANDBY")
-                state_item.setForeground(QColor(WARN))
+                state_code = "STANDBY"
             else:
-                state_item.setText("IDLE")
-                state_item.setForeground(QColor(MUTED))
+                state_code = "IDLE"
+            state_item.setText(state_code)
+            state_item.setData(ROLE_STATE_CODE, state_code)
 
-            for col in (1, 2, 3):
+            for col in (2, 3):
                 cell = self._table.item(row, col)
                 if cell is None:
                     continue
                 if rule.id == self._winner_id:
-                    cell.setForeground(QColor(ACCENT if col == 1 else TEXT))
+                    cell.setForeground(QColor(TEXT))
                 elif not rule.enabled:
                     cell.setForeground(QColor(DIM))
                 else:
                     cell.setForeground(QColor(MUTED if col == 3 else TEXT))
         self._updating = False
+        self._table.viewport().update()
 
     def _on_item_changed(self, item: QTableWidgetItem) -> None:
         if self._updating or item.column() != 0:
