@@ -1,4 +1,4 @@
-Set-Content -Path "README.md" -Encoding UTF8 -Value @'
+
 <div align="center">
 
 # 🌌 OmniPresence
