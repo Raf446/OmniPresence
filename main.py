@@ -62,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
 
     app = QApplication(sys.argv)
     app.setApplicationName("OmniPresence")
-    app.setApplicationVersion("1.2.0")
+    app.setApplicationVersion("2.0.0")
     app.setOrganizationName("Raf446")
     app.setQuitOnLastWindowClosed(False)
     app.setWindowIcon(app_icon("disconnected"))

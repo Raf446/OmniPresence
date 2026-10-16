@@ -308,7 +308,12 @@ class IPCManager(QThread):
                     fallback = replace(fallback, buttons=())
                 elif fallback.large_image and fallback.large_image.lower().startswith(("http://", "https://")):
                     self.message.emit("warn", f"Discord rejected external artwork URL ({exc}), using fallback icon")
-                    fallback = replace(fallback, large_image="music_placeholder")
+                    fallback_icon = (
+                        "youtube"
+                        if "youtube" in fallback.rule_id
+                        else ("spotify" if "spotify" in fallback.rule_id else "music_placeholder")
+                    )
+                    fallback = replace(fallback, large_image=fallback_icon)
                 if fallback != presence:
                     try:
                         await self._update(rpc, fallback)

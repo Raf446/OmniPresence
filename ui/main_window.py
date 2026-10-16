@@ -163,7 +163,7 @@ class CustomTitleBar(QFrame):
         brand.setFont(ui_font(13, QFont.Weight.Bold))
         layout.addWidget(brand)
 
-        ver = QLabel("v1.2.0", objectName="TitleVersionBadge")
+        ver = QLabel("v2.0.0", objectName="TitleVersionBadge")
         ver.setFont(mono_font(10, QFont.Weight.DemiBold))
         layout.addWidget(ver)
 

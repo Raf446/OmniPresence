@@ -2,150 +2,219 @@
 
 # 🌌 OmniPresence
 
-**Custom Discord Rich Presence Manager berbasis PySide6 & Discord IPC**
-
-[![Python Version](https://img.shields.io/badge/python-3.11+-3776AB.svg?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
-[![Framework](https://img.shields.io/badge/GUI-PySide6%20(Qt6)-41CD52.svg?style=flat-square&logo=qt&logoColor=white)](https://www.qt.io/)
-[![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0078D4.svg?style=flat-square&logo=windows&logoColor=white)](https://microsoft.com/windows)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
 
 <p align="center">
-  Aplikasi desktop Windows untuk memperbarui status Discord Rich Presence secara otomatis berdasarkan aktivitas yang sedang berjalan—mulai dari proses kompilasi kode, teks editor/IDE, sesi game, hingga lagu yang sedang diputar.
+  <strong>High-Performance, Multi-Context Discord Rich Presence Engine for Windows</strong>
 </p>
 
-[Fitur](#-fitur) • [Hierarki Prioritas](#-hierarki-prioritas) • [Cara Pasang & Jalankan](#-cara-pasang--jalankan) • [Compile ke .EXE](#-compile-ke-exe) • [Konfigurasi](#-konfigurasi) • [Struktur Proyek](#-struktur-proyek)
+<p align="center">
+  <img src="https://img.shields.io/badge/version-2.0.0-blue.svg?style=flat-square" alt="Version 2.0.0" />
+  <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6.svg?style=flat-square" alt="Platform" />
+  <img src="https://img.shields.io/badge/python-3.11%2B-3776AB.svg?style=flat-square" alt="Python" />
+  <img src="https://img.shields.io/badge/gui-PySide6%20(Qt6)-41CD52.svg?style=flat-square" alt="GUI" />
+  <img src="https://img.shields.io/badge/ipc-Discord%20Native%20Pipe-5865F2.svg?style=flat-square" alt="Discord IPC" />
+</p>
 
 ---
 
-</div>
+## Overview
 
-## 🚀 Fitur
+**OmniPresence** adalah utiliti desktop automasi Discord Rich Presence yang menyelesaikan konflik status serentak melalui hierarki timbang tara berperingkat (*tiered priority arbitration*). Enjin ini mengesan aktiviti penyusun kod (*compilers*), persekitaran pembangunan (IDE), mod permainan skrin penuh, sesi media audio (Spotify/SMTC), dan penstriman video penyemak imbas (*browser video streaming*) secara masa nyata dengan latensi peralihan mikrosaat.
 
-- **Cover Album Musik Dinamis:** Otomatis mengambil dan menampilkan gambar cover album resolusi tinggi di Discord saat memutar lagu (Spotify, browser, pemutar lokal) tanpa perlu setup Spotify Developer API key.
-- **Deteksi Identitas Akun Otomatis:** Membaca username dan inisial avatar langsung dari payload handshake Discord IPC (`READY`). Tidak ada lagi nama yang di-hardcode.
-- **Sistem Prioritas Pintar:** Status Discord berganti mulus tanpa saling tumpang tindih (misal: saat compile atau bermain game, status musik di latar belakang otomatis mengalah).
-- **Deteksi Konteks Git & Editor:** Menampilkan nama file, proyek, dan branch Git aktif saat menggunakan editor seperti Code::Blocks atau VS Code.
-- **Compiler Watcher:** Mendeteksi eksekusi compiler (`gcc`, `g++`, `clang`, `make`, `cmake`, `ninja`, dll.) dan menampilkan status build secara real-time.
-- **Live Preview & Telemetri:** Mockup kartu Discord interaktif dan pemantau beban CPU/RAM langsung di titlebar aplikasi.
-- **Siap Jadi File `.exe` Mandiri:** Dilengkapi script build satu-klik untuk membundel aplikasi menjadi file executable tanpa jendela hitam terminal (*silent GUI*).
+Dilengkapi penyelesai metadata asinkronus (`QThreadPool`), OmniPresence memaparkan seni kulit album (*album art*) dan lakaran kecil (*video thumbnails*) resolusi tinggi tanpa memerlukan kunci API luaran.
 
 ---
 
-## 🧭 Hierarki Prioritas
+## Core Architecture
 
-OmniPresence mengecek aplikasi aktif secara berkala dan menentukan status mana yang berhak tampil di profil Discord berdasarkan urutan tier:
-
-```mermaid
-graph TD
-    P1[P1: Manual Override] -->|Prioritas Tertinggi| RPC[Discord Status]
-    P2[P2: Compiler & Build] -->|Jika P1 Kosong| RPC
-    P3[P3: Game Session] -->|Jika P2 Idle| RPC
-    P4[P4: IDE / Editor & Git] -->|Jika P3 Idle| RPC
-    P5[P5: Media Player / Musik] -->|Jika P4 Idle| RPC
-    P6[P6: Idle / Fallback] -->|Jika Semua Idle| RPC
 
 ```
 
-| Tier | Kategori | Contoh Trigger | Output Status di Discord |
-| --- | --- | --- | --- |
-| **P1** | **Manual Override** | Diaktifkan manual dari bar kontrol | Mengunci status kustom pilihan sendiri |
-| **P2** | **Compiler Active** | `gcc.exe`, `g++.exe`, `ninja.exe` | `Compiling: main.cpp` + durasi build |
-| **P3** | **Gaming Mode** | Minecraft, game Steam/fullscreen | Nama game & lama waktu bermain |
-| **P4** | **IDE & Editor** | Code::Blocks, VS Code | `Editing: app.cpp` • `Git: main` |
-| **P5** | **Media Scrobbler** | Spotify, YouTube Music via browser | `Listening to: [Lagu] by [Artis]` + Album Art |
-| **P6** | **Idle** | Tidak ada proses utama aktif | Status standby / netral |
-
----
-
-## 💻 Cara Pasang & Jalankan
-
-### Prasyarat
-
-* **Windows 10 / 11** (64-bit)
-* **Python 3.11+**
-* Aplikasi **Discord Desktop** (atau Vesktop dengan RPC aktif)
-
-### 1. Clone Repositori
-
-```powershell
-git clone [https://github.com/Raf446/OmniPresence.git](https://github.com/Raf446/OmniPresence.git)
-cd OmniPresence
+```
+              ┌──────────────────────────────────────────────┐
+              │          System Hardware & OS Hooks          │
+              │  (WinEvent Hook, SMTC Media, Process Enum)   │
+              └──────────────────────┬───────────────────────┘
+                                     │ Telemetry & Events
+                                     ▼
 
 ```
 
-### 2. Install Dependensi
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                                 Priority Engine Core                                   │
+│                                                                                        │
+│  [P1] Manual Override    -> Hardcoded Developer Debug / Static Lock                    │
+│  [P2] Toolchain / Build  -> Compilers, Linkers, Debuggers (GCC, MSVC, Clang, Rustc)    │
+│  [P3] Fullscreen Games   -> Direct3D/Vulkan Exclusive & Borderless Windows             │
+│  [P4] IDEs & Workspaces  -> Active Focused Windows (VS Code, Visual Studio, etc.)     │
+│  [P5] Media & Browsers   -> YouTube Streamers, Spotify Desktop, SMTC Sessions          │
+│  [P6] Idle & AFK System  -> Win32 LastInputInfo Sleep Arbitrator                       │
+└────────────────────────────────────────┬───────────────────────────────────────────────┘
+│ Resolved PresencePayload
+▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                              Async Scrobbler & Resolvers                               │
+│                                                                                        │
+│  • YouTubeThumbnailResolver -> Gzip stream scraping, videoId regex, hqdefault URL     │
+│  • MediaScrobbler           -> Noise stripping, difflib fuzzy score, tribute reject   │
+└────────────────────────────────────────┬───────────────────────────────────────────────┘
+│ Enriched Payload
+▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                            Adaptive IPC Transmission Loop                              │
+│                                                                                        │
+│  • Fast-Lane Priority Switch : 0.25s Debounce (Rule / Tier / Track Transitions)        │
+│  • Sustained State Cooldown  : 4.50s Rate-Limit (Discord 4 req / 20s bucket safe)      │
+│  • Pipe Transport Failover   : Auto-reconnect \.\pipe\discord-ipc-0 -> 9              │
+└────────────────────────────────────────────────────────────────────────────────────────┘
 
+```
+
+---
+
+## Key Features
+
+### 1. Dynamic Zero-Key YouTube Thumbnail Resolver
+* **Scraping Resolusi Tinggi:** Mengambil lakaran kecil (`hqdefault.jpg`) terus daripada pengecam `videoId` menggunakan aliran data `gzip` mampat (<180 KB payload) dalam masa bawah ~900 ms tanpa kuota Google Cloud API.
+* **Toleran Bunyi Bar Tajuk (*Title Noise Resilience*):** Menapis secara automatik glif pemutaran (`▶`, `►`), penunjuk audio (`🔊`), nombor pemberitahuan tab `(1)`, *zero-width spaces* (`\u200b`), dan akhiran penjenamaan pelayar (`- Brave`, `- Google Chrome`, `- Microsoft Edge`, `— Mozilla Firefox`).
+* **Halaman Navigasi:** Memaparkan status elegan seperti `"Browsing YouTube (Subscriptions)"` atau `"Browsing YouTube"` apabila berada di suapan utama.
+
+### 2. Sanitasi Metadata & Pengesahan Album Muzik
+* **Algoritma Pembersihan RegEx:** Menyingkirkan teks sampingan seperti `[Official Music Video]`, `(Remastered 2024)`, `(From "Movie Soundtrack")`, dan senarai kolaborator panjang (`feat.`, `with`).
+* **Penilaian Calon (*Candidate Similarity Scoring*):** Menggunakan nisbah rentetan token `difflib.SequenceMatcher` dengan ambang kelulusan ketat (`threshold = 0.58`). Menolak padanan palsu daripada kumpulan penghormatan (*tribute bands*), versi karaoke, dan rakaman peminat secara automatik.
+
+### 3. Timbang Tara Konteks Pantas (*Preemptive Arbitration*)
+* **Z-Order Window Scanning:** Apabila tetingkap aktif ditinggalkan, konteks latar belakang berbayang (*sticky hold*) serta-merta memberi laluan kepada sesi media (`foreground=True` mengatasi `foreground=False`).
+* **Peralihan Pantas IPC (0.25s):** Perubahan lagu atau aplikasi diproses serta-merta tanpa perlu menunggu sela masa semakan pemasa (*polling timer*).
+
+---
+
+## Priority Hierarchy Matrix
+
+| Tier | Pengelas | Skop Pengesanan | Tingkah Laku & Pelucutan (*Eviction*) |
+| :---: | :--- | :--- | :--- |
+| **P1** | **Manual Override** | Bar kawalan tindakan UI | Mengatasi semua aktiviti sistem secara mutlak sehingga dinyahaktifkan. |
+| **P2** | **Toolchain / Build** | `gcc`, `cl`, `rustc`, `cargo`, `ninja` | Aktif semasa pengkompilasi menggunakan kitaran CPU; lupus serta-merta selepas pautan siap. |
+| **P3** | **Fullscreen Games** | Senarai binari proses permainan & mod skrin penuh | Mengesan tetingkap DirectX/Vulkan eksklusif; menghalang status media mengaburkan permainan. |
+| **P4** | **IDEs & Editors** | `code.exe`, `devenv.exe`, `codeblocks.exe` | Aktif semasa fokus; mempunyai tempoh penimbal (*sticky buffer*) yang gugur serta-merta jika media aktif. |
+| **P5** | **Media & Browsers** | Brave, Chrome, Firefox, Edge, Spotify, SMTC | Memaparkan metadata lagu/video aktif bersama kulit album atau lakaran kecil langsung. |
+| **P6** | **Idle / Standby** | Win32 `GetLastInputInfo()` (> 300s) | Melupuskan status kerja secara automatik apabila tiada interaksi fizikal papan kekunci/tetikus. |
+
+---
+
+## Project Structure
+
+
+```
+
+OmniPresence/
+├── assets/                  # Vektor SVG, ikon aplikasi, dan lembaran gaya CSS
+├── config/
+│   └── rules.json           # Skema JSON pengisytiharan peraturan, regex, dan keutamaan
+├── core/
+│   ├── ipc_manager.py       # Pengendali paip soket Discord IPC, giliran preemptif, & pengehad kadar
+│   ├── priority_engine.py   # Logik penyelesai hierarki, penghurai templat, & timbang tara konteks
+│   ├── process_watcher.py   # WinEvent foreground hook & pengimbas tetingkap Z-order Win32
+│   └── state_manager.py     # Pengurus kitaran hayat aplikasi & penyelarasan isyarat PySide6
+├── extractors/
+│   ├── media_scrobbler.py   # Pengekstrak sesi Windows SMTC & pengesah album seni iTunes/Deezer
+│   └── youtube_resolver.py  # Penyelesai lakaran kecil video YouTube tak segerak (tanpa API key)
+├── ui/
+│   ├── discord_preview.py   # Widget visualisasi kad Discord masa nyata
+│   └── main_window.py       # Antara muka kawalan PySide6 & log telemetri langsung
+├── build.bat                # Skrip automasi binaan PyInstaller satu fail (.exe)
+├── build_exe.py             # Spesifikasi kompilasi PyInstaller & pembenaman metadata Windows
+├── main.py                  # Titik masuk aplikasi, penghurai CLI, & pemula gelung acara Qt
+└── requirements.txt         # Ketergantungan pustaka teras runtime
+
+```
+
+---
+
+## Installation & Setup
+
+### Keperluan Sistem
+* **Sistem Operasi:** Windows 10 / 11 (64-bit)
+* **Persekitaran:** Python 3.11 atau lebih baharu (untuk mod skrip mentah)
+* **Klien Sasaran:** Discord Desktop (Stable / PTB / Canary)
+
+### Pemasangan Mod Pembangun
+
+1. **Klon repositori:**
+   ```powershell
+   git clone [https://github.com/Raf446/OmniPresence.git](https://github.com/Raf446/OmniPresence.git)
+   cd OmniPresence
+
+```
+
+2. **Cipta persekitaran maya & pasang pakej:**
 ```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install --upgrade pip
 pip install -r requirements.txt
 
 ```
 
-### 3. Jalankan Aplikasi
 
+3. **Uji pelaksanaan skrip (*Smoke Test*):**
 ```powershell
-# Menjalankan aplikasi normal
-python main.py
-
-# Menjalankan langsung terminimalkan ke System Tray
-python main.py --minimized
+python main.py --smoke-test 2.0
 
 ```
 
+
+4. **Jalankan aplikasi:**
+```powershell
+python main.py
+
+```
+
+
+
 ---
 
-## 📦 Compile ke .EXE
+## Production Build (Standalone .EXE)
 
-Untuk membuat file executable mandiri (`OmniPresence.exe`) yang bisa dijalankan langsung di PC lain tanpa perlu install Python:
+Untuk menghasilkan satu fail binari mandiri tanpa pergantungan persekitaran Python tempatan:
 
 ```powershell
 .\build.bat
 
 ```
 
-Script akan otomatis menyiapkan PyInstaller, membuat ikon aplikasi, dan mengompilasi proyek. File hasil kompilasi siap pakai akan berada di folder:
+Skrip pengkompilasi akan melaksanakan:
 
-```text
-dist\OmniPresence.exe
-
-```
+* Pengesahan kebersihan modul dan penguraian metadata versi `v2.0.0`.
+* Pembungkusan PyInstaller mod fail tunggal (*one-file*) berprestasi tinggi bersama runtime PySide6 dan Windows SDK DLL.
+* Penempatan artifak boleh laku akhir di direktori `dist\OmniPresence.exe` berserta folder sokongan `dist\config\`.
 
 ---
 
-## ⚙️ Konfigurasi
+## Configuration (`rules.json`)
 
-### Pengaturan Umum (`config/settings.json`)
-
-```json
-{
-  "discord_client_id": "1560465175188996176",
-  "discord_app_name": "OmniPresence",
-  "profile_display_name": "",
-  "profile_handle": "",
-  "poll_interval_seconds": 2.5,
-  "start_minimized": false
-}
-
-```
-
-* Biarkan `profile_display_name` dan `profile_handle` kosong (`""`) agar aplikasi mendeteksi nama dan handle akun Discord kamu secara otomatis. Isi jika ingin memakai nama custom di kartu preview.
-
-### Aturan Deteksi (`config/rules.json`)
-
-Setiap rule diatur dalam format JSON sederhana:
+Tingkah laku pengesanan boleh diubah suai melalui `config/rules.json`. Setiap peraturan menyokong padanan berasaskan corak teks, pembolehubah templat, dan penetapan tahap hierarki:
 
 ```json
 {
-  "id": "codeblocks_editor",
-  "name": "Code::Blocks IDE",
-  "priority": "P4",
-  "process_names": ["codeblocks.exe"],
+  "id": "browser-youtube",
+  "name": "YouTube in the browser",
+  "enabled": true,
+  "tier": "media",
+  "match": {
+    "processes": ["chrome.exe", "brave.exe", "msedge.exe", "firefox.exe"],
+    "title_regex": [
+      "^(?:.*?[\\u25b6\\U0001f50a]?\\s*)?(?P<video>\\S.*?)\\s*[-\\u2013\\u2014]\\s*YouTube(?:\\s*[-\\u2013\\u2014].*)?$"
+    ]
+  },
+  "sticky_seconds": 90,
   "presence": {
-    "details": "Editing: {file}",
-    "state": "Project: {target|Workspace}",
-    "large_image": "codeblocks",
-    "large_text": "Code::Blocks IDE",
-    "small_image": "git_badge",
-    "small_text": "Branch: {git_branch}"
+    "details": "{video}",
+    "state": "Watching on YouTube • {app_label}",
+    "large_image": "{youtube_thumbnail|youtube}",
+    "large_text": "{video|YouTube}",
+    "small_image": "browser",
+    "small_text": "{app_label}"
   }
 }
 
@@ -153,40 +222,9 @@ Setiap rule diatur dalam format JSON sederhana:
 
 ---
 
-## 📂 Struktur Proyek
+## License
 
-```text
-OmniPresence/
-├── assets/             # Ikon aplikasi dan stylesheet UI (theme.qss)
-├── config/             # settings.json dan rules.json
-├── core/
-│   ├── ipc_manager.py     # Koneksi socket Discord IPC & sniffer event READY
-│   ├── priority_engine.py # Evaluasi prioritas dan pencocokan proses
-│   ├── process_watcher.py # Pemantau proses Windows aktif
-│   └── state_manager.py   # State store dan reactive signals Qt
-├── extractors/
-│   ├── git_context.py     # Pembaca metadata repo Git lokal
-│   └── media_scrobbler.py # SMTC audio listener & resolver cover album
-├── ui/
-│   ├── components/        # Discord card preview, rule table, meter telemetri
-│   └── main_window.py     # Window utama PySide6
-├── build_exe.py        # Script build PyInstaller
-├── build.bat           # Automasi build sekali klik untuk Windows
-├── requirements.txt    # Daftar dependensi Python
-└── main.py             # Entrypoint aplikasi
-
-```
-
----
-
-## 📄 Lisensi
-
-Proyek ini menggunakan lisensi [MIT](https://www.google.com/search?q=LICENSE). Silakan gunakan, modifikasi, dan kembangkan sesuka hati.
-'@
-
-git add README.md
-git commit -m "docs: update README with natural tone and flattened project structure"
-git push origin main
+Dilesenkan di bawah [MIT License](https://www.google.com/search?q=LICENSE). Bebas digunakan, diubah suai, dan diedarkan untuk kegunaan peribadi mahupun komersial.
 
 ```
 

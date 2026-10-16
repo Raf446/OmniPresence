@@ -38,6 +38,7 @@ SHELL_CLASSES = frozenset({"Progman", "WorkerW", "Shell_TrayWnd", "Shell_Seconda
 WINEVENTPROC = ctypes.WINFUNCTYPE(
     None, wintypes.HANDLE, wintypes.DWORD, wintypes.HWND, wintypes.LONG, wintypes.LONG, wintypes.DWORD, wintypes.DWORD
 )
+WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
 
 
 class LASTINPUTINFO(ctypes.Structure):
@@ -54,6 +55,10 @@ class MONITORINFO(ctypes.Structure):
 
 
 user32.GetForegroundWindow.restype = wintypes.HWND
+user32.IsWindowVisible.argtypes = [wintypes.HWND]
+user32.IsWindowVisible.restype = wintypes.BOOL
+user32.EnumWindows.argtypes = [WNDENUMPROC, wintypes.LPARAM]
+user32.EnumWindows.restype = wintypes.BOOL
 user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
 user32.GetWindowTextLengthW.restype = ctypes.c_int
 user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
@@ -132,11 +137,10 @@ class ProcessTable:
 
 
 class WindowProbe:
-    """Thin ctypes wrapper over the user32 calls needed to describe the foreground window."""
+    """Thin ctypes wrapper over the user32 calls needed to describe foreground and visible windows."""
 
     @staticmethod
-    def foreground(table: ProcessTable) -> WindowFacts | None:
-        hwnd = user32.GetForegroundWindow()
+    def _read_hwnd(hwnd, table: ProcessTable, check_fullscreen: bool = False) -> WindowFacts | None:
         if not hwnd:
             return None
         pid = wintypes.DWORD(0)
@@ -154,9 +158,61 @@ class WindowProbe:
             pid=pid.value,
             process=record.name,
             title=title,
-            fullscreen=WindowProbe._is_fullscreen(hwnd),
+            fullscreen=WindowProbe._is_fullscreen(hwnd) if check_fullscreen else False,
             started_at=record.create_time or None,
         )
+
+    @staticmethod
+    def foreground(table: ProcessTable) -> WindowFacts | None:
+        return WindowProbe._read_hwnd(user32.GetForegroundWindow(), table, check_fullscreen=True)
+
+    @staticmethod
+    def visible_windows(table: ProcessTable, self_pid: int = 0) -> list[tuple[WindowFacts, bool]]:
+        """Return visible top-level windows in Z-order as (WindowFacts, is_primary_foreground).
+
+        If the user clicked on OmniPresence itself (pid == self_pid), the top-most visible window
+        directly behind OmniPresence in Z-order is promoted to `is_primary_foreground = True`.
+        Other visible top-level windows (such as a browser window playing YouTube in the background)
+        are returned with `is_primary_foreground = False` so background browser rules remain active.
+        """
+        results: list[tuple[WindowFacts, bool]] = []
+        seen_hwnds: set[int] = set()
+        primary_assigned = False
+
+        fg_hwnd = user32.GetForegroundWindow()
+        if fg_hwnd:
+            fg_facts = WindowProbe._read_hwnd(fg_hwnd, table, check_fullscreen=True)
+            if fg_facts is not None and fg_facts.pid != self_pid and fg_facts.process:
+                seen_hwnds.add(int(fg_hwnd))
+                results.append((fg_facts, True))
+                primary_assigned = True
+
+        @WNDENUMPROC
+        def _enum_cb(hwnd, _lparam) -> bool:
+            nonlocal primary_assigned
+            if not hwnd or int(hwnd) in seen_hwnds:
+                return True
+            if not user32.IsWindowVisible(hwnd):
+                return True
+            length = user32.GetWindowTextLengthW(hwnd)
+            if length <= 0:
+                return True
+            class_buf = ctypes.create_unicode_buffer(64)
+            user32.GetClassNameW(hwnd, class_buf, 64)
+            if class_buf.value in SHELL_CLASSES:
+                return True
+            facts = WindowProbe._read_hwnd(hwnd, table, check_fullscreen=not primary_assigned)
+            if facts is None or facts.pid == self_pid or not facts.process or not facts.title.strip():
+                return True
+            seen_hwnds.add(int(hwnd))
+            is_primary = not primary_assigned
+            if is_primary:
+                primary_assigned = True
+            results.append((facts, is_primary))
+            return len(results) < 28
+
+        user32.EnumWindows(_enum_cb, 0)
+        return results
 
     @staticmethod
     def _is_fullscreen(hwnd) -> bool:
@@ -191,7 +247,7 @@ class WindowProbe:
 
 
 class ForegroundHook:
-    """Calls `on_event` whenever the foreground window changes or retitles itself."""
+    """Calls `on_event` whenever the foreground window changes or any visible window retitles itself."""
 
     def __init__(self, on_event: Callable[[], None]) -> None:
         self._on_event = on_event
@@ -213,7 +269,7 @@ class ForegroundHook:
 
     def _callback(self, _hook, event, hwnd, id_object, id_child, _thread, _time) -> None:
         if event == EVENT_OBJECT_NAMECHANGE:
-            if id_object != OBJID_WINDOW or id_child != CHILDID_SELF or hwnd != user32.GetForegroundWindow():
+            if id_object != OBJID_WINDOW or id_child != CHILDID_SELF or not hwnd or not user32.IsWindowVisible(hwnd):
                 return
         self._on_event()
 
@@ -437,6 +493,7 @@ class ProcessWatcher(QThread):
         self._last_full_scan = 0.0
         self._last_build: BuildInfo | None = None
         self._last_telemetry: TelemetrySample | None = None
+        self._self_pid = os.getpid()
 
     def on_rules_changed(self, rulebook: RuleBook, _error: str = "") -> None:
         self._book = rulebook
@@ -496,7 +553,8 @@ class ProcessWatcher(QThread):
             self._last_telemetry = self._telemetry.sample()
             self._last_full_scan = now
 
-        window = WindowProbe.foreground(self._table)
+        windows = WindowProbe.visible_windows(self._table, self._self_pid)
+        window = windows[0][0] if windows else WindowProbe.foreground(self._table)
         idle = WindowProbe.idle_seconds()
         build = self._last_build
         telemetry = self._last_telemetry
@@ -505,12 +563,22 @@ class ProcessWatcher(QThread):
 
         activities: list[Activity] = []
         fresh: set[str] = set()
-        for rule, groups in book.match_window(window, build is not None):
-            activity = self._make_activity(book, rule, groups, window, build, shared, now)
-            activities.append(activity)
-            fresh.add(rule.id)
-            if rule.sticky_seconds > 0 and window is not None:
-                self._sticky[rule.id] = (activity, now, window.process)
+        scan_targets = windows if windows else [(window, True)]
+        build_checked = False
+        for win, is_fg in scan_targets:
+            check_build = (build is not None) and not build_checked
+            build_checked = True
+            for rule, groups in book.match_window(win, check_build):
+                if rule.id in fresh:
+                    continue
+                is_active_fg = True if rule.kind == "build" else is_fg
+                activity = self._make_activity(
+                    book, rule, groups, win, build, shared, now, foreground=is_active_fg
+                )
+                activities.append(activity)
+                fresh.add(rule.id)
+                if rule.sticky_seconds > 0 and win is not None:
+                    self._sticky[rule.id] = (activity, now, win.process)
         activities += self._carry_sticky(book, fresh, now)
         return ScanResult(now, tuple(activities), window, idle, telemetry, build)
 
@@ -540,6 +608,7 @@ class ProcessWatcher(QThread):
         build: BuildInfo | None,
         shared: dict[str, str],
         now: float,
+        foreground: bool = True,
     ) -> Activity:
         variables = dict(shared)
         if window is not None:
@@ -580,4 +649,4 @@ class ProcessWatcher(QThread):
             started = build.started_at
         else:
             started = window.started_at if window is not None else None
-        return Activity(rule.id, key, variables, started)
+        return Activity(rule.id, key, variables, started, None, foreground)

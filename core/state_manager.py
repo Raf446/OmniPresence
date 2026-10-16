@@ -19,6 +19,7 @@ from core.priority_engine import (
     RuleBook,
     RuleError,
 )
+from extractors.youtube_resolver import YOUTUBE_THUMBNAIL_RESOLVER
 
 CLIENT_ID_ENV = "OMNIPRESENCE_CLIENT_ID"
 
@@ -134,6 +135,8 @@ class StateManager(QObject):
         self._last_outgoing: Any = object()
         self._last_trigger: tuple[str, str] | None = None
 
+        YOUTUBE_THUMBNAIL_RESOLVER.signals.resolved.connect(self.on_youtube_thumbnail)
+
     @property
     def profile(self) -> tuple[str, str]:
         """Return (display_name, handle) prioritizing settings.json overrides, then IPC READY user, then neutral fallback."""
@@ -183,6 +186,11 @@ class StateManager(QObject):
     @Slot(str, str)
     def on_media_message(self, level: str, text: str) -> None:
         self.log(level, "media", text)
+
+    @Slot(str, str, str)
+    def on_youtube_thumbnail(self, _norm_key: str, video_title: str, url: str) -> None:
+        self.log("info", "youtube", f"thumbnail matched: {video_title}")
+        self._reevaluate()
 
     @Slot(str, str)
     def on_ipc_message(self, level: str, text: str) -> None:

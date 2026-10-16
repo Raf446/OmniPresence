@@ -13,6 +13,9 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 from urllib.parse import quote
 
+from extractors.youtube_resolver import YOUTUBE_THUMBNAIL_RESOLVER
+
+
 
 class RuleError(ValueError):
     """Raised when rules.json cannot be turned into a valid RuleBook."""
@@ -46,18 +49,37 @@ DISCORD_TEXT_LIMIT = 128
 DISCORD_LABEL_LIMIT = 32
 DISCORD_URL_LIMIT = 512
 
-_TOKEN = re.compile(r"\[\[(.*?)\]\]|\{([A-Za-z_][A-Za-z0-9_]*)\}", re.S)
-_VAR = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+_TOKEN = re.compile(r"\[\[(.*?)\]\]|\{([A-Za-z_][A-Za-z0-9_]*(?:\|[^{}]*)?)\}", re.S)
+_VAR = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*(?:\|[^{}]*)?)\}")
 _OPTIONAL = re.compile(r"\[\[.*?\]\]", re.S)
 _SPACES = re.compile(r"\s+")
+_ZERO_WIDTH = re.compile(r"[\u200b-\u200f\u202a-\u202e\u2060\ufeff]")
+_LEADING_TITLE_NOISE = re.compile(
+    r"^(?:(?:\(\d+\)|\[\d+\])\s*|(?:[▶►▸▹⏵⏸⏹⏺🔊🔉🔈🔇🔴🟢🎵🎶🎧📺]\ufe0f?|\u25b6\ufe0f?|\u23f8\ufe0f?)\s*)+"
+)
+_BROWSER_MEDIA_TOKENS = ("chrome", "brave", "msedge", "edge", "firefox", "opera", "vivaldi")
+
+
+def sanitize_window_title(title: str) -> str:
+    """Strip zero-width Unicode chars, leading notification counts, and play/audio glyphs."""
+    if not title:
+        return ""
+    cleaned = _ZERO_WIDTH.sub("", title)
+    cleaned = _LEADING_TITLE_NOISE.sub("", cleaned)
+    return _SPACES.sub(" ", cleaned).strip()
 
 
 def _lookup(name: str, variables: Mapping[str, str]) -> str:
+    if "|" in name:
+        primary, fallback = name.split("|", 1)
+        resolved = _lookup(primary.strip(), variables)
+        return resolved if resolved else fallback.strip()
     # A "_q" suffix yields the URL-encoded form of the base variable.
     if name.endswith("_q"):
         base = variables.get(name[:-2], "")
         return quote(base, safe="") if base else ""
     return variables.get(name, "")
+
 
 
 def render(template: str, variables: Mapping[str, str]) -> str | None:
@@ -104,6 +126,7 @@ def _discord_text(value: str | None) -> str | None:
     if value is None or len(value) < 2:
         return None
     return value if len(value) <= DISCORD_TEXT_LIMIT else value[: DISCORD_TEXT_LIMIT - 1] + "\u2026"
+
 
 
 @dataclass(frozen=True)
@@ -424,6 +447,7 @@ class RuleBook:
     ) -> list[tuple[Rule, dict[str, str]]]:
         """Rules triggered by the foreground window or by a running build."""
         hits: list[tuple[Rule, dict[str, str]]] = []
+        clean_title = sanitize_window_title(window.title) if window is not None else ""
         for rule in self.rules:
             if not rule.enabled:
                 continue
@@ -444,12 +468,21 @@ class RuleBook:
             groups: dict[str, str] = {}
             if m.title_patterns:
                 for pattern in m.title_patterns:
-                    found = pattern.search(window.title)
+                    found = pattern.search(clean_title)
+                    if not found and clean_title != window.title:
+                        found = pattern.search(window.title)
                     if found:
-                        groups = {k: (v or "").strip() for k, v in found.groupdict().items()}
+                        groups = {
+                            k: (v or "").strip(" -–—|•\t")
+                            for k, v in found.groupdict().items()
+                        }
                         break
                 else:
                     continue
+            if rule.id == "browser-youtube" and groups.get("video"):
+                groups["youtube_thumbnail"] = YOUTUBE_THUMBNAIL_RESOLVER.resolve(
+                    groups["video"], background=True
+                )
             hits.append((rule, groups))
         return hits
 
@@ -559,13 +592,24 @@ class PriorityEngine:
     def _collect(
         self, inp: EngineInput, book: RuleBook, shared: Mapping[str, str]
     ) -> list[tuple[Rule, Activity]]:
+        media = inp.media
+        browser_media_active = bool(
+            media is not None
+            and any(tok in media.app_id.lower() for tok in _BROWSER_MEDIA_TOKENS)
+        )
+
         found: list[tuple[Rule, Activity]] = []
         for activity in inp.activities:
             rule = book.get(activity.rule_id)
             if rule is not None and rule.enabled:
+                if (
+                    not activity.foreground
+                    and rule.id == "browser-youtube"
+                    and browser_media_active
+                ):
+                    activity = replace(activity, foreground=True)
                 found.append((rule, activity))
 
-        media = inp.media
         if media is not None:
             rule = book.match_media(media.app_id)
             if rule is not None:
@@ -624,6 +668,15 @@ class PriorityEngine:
         self, rule: Rule, activity: Activity, shared: Mapping[str, str], now: float
     ) -> PresenceData:
         variables = {**shared, **activity.variables}
+        if rule.id == "browser-youtube":
+            video_title = variables.get("video", "").strip()
+            if video_title:
+                variables["youtube_thumbnail"] = YOUTUBE_THUMBNAIL_RESOLVER.resolve(
+                    video_title, background=True
+                )
+            else:
+                variables.setdefault("youtube_thumbnail", "youtube")
+
         spec = rule.presence
         start, end = self._timestamps(rule, activity)
 
@@ -640,6 +693,16 @@ class PriorityEngine:
 
         large_image = render_first(spec.large_image, variables)
         large_text = render_first(spec.large_text, variables)
+
+        if rule.id == "browser-youtube":
+            yt_thumb = variables.get("youtube_thumbnail", "").strip()
+            if yt_thumb.lower().startswith("https://") and len(yt_thumb) <= 256:
+                large_image = yt_thumb
+            elif not large_image:
+                large_image = "youtube"
+            if not large_text:
+                app_label = variables.get("app_label", "").strip()
+                large_text = f"YouTube on {app_label}" if app_label else "YouTube"
 
         if rule.kind == "media":
             dynamic_art = variables.get("artwork_url", "").strip()

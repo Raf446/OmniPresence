@@ -4,6 +4,9 @@
     "chrome.exe": "Google Chrome",
     "brave.exe": "Brave",
     "msedge.exe": "Microsoft Edge",
+    "firefox.exe": "Mozilla Firefox",
+    "opera.exe": "Opera",
+    "vivaldi.exe": "Vivaldi",
     "code.exe": "Visual Studio Code",
     "code - insiders.exe": "VS Code Insiders",
     "vscodium.exe": "VSCodium",
@@ -243,7 +246,7 @@
     {
       "id": "vscode",
       "name": "Visual Studio Code",
-      "enabled": true,
+      "enabled": false,
       "tier": "editor",
       "match": {
         "processes": [
@@ -343,7 +346,10 @@
         "processes": [
           "chrome.exe",
           "brave.exe",
-          "msedge.exe"
+          "msedge.exe",
+          "firefox.exe",
+          "opera.exe",
+          "vivaldi.exe"
         ],
         "title_regex": [
           "^(?P<page>.+?) · (?P<kind>(?:Pull Request|Issue) #\\d+) · (?P<repo>[\\w.-]+/[\\w.-]+) · GitHub",
@@ -387,22 +393,30 @@
         "processes": [
           "chrome.exe",
           "brave.exe",
-          "msedge.exe"
+          "msedge.exe",
+          "firefox.exe",
+          "opera.exe",
+          "vivaldi.exe"
         ],
         "title_regex": [
-          "^(?:\\(\\d+\\)\\s*)?(?!(?:Subscriptions|History|Library|Home|Explore|Playlists|Liked videos) - YouTube)(?P<video>.+?) - YouTube(?:\\s+and \\d+ more pages?)?(?: - .*)?$"
+          "^(?:[\\u200b-\\u200f\\ufeff]*(?:\\(\\d+\\)\\s*)?(?:[\\u25b6\\u25ba\\u25b8\\u25b9\\u23f5\\u23f8\\u23f9\\u23fa\\U0001f50a\\U0001f509\\U0001f508\\U0001f507\\U0001f534\\U0001f7e2\\U0001f3b5\\U0001f3b6\\U0001f3a7\\U0001f4fa\\ufe0f]+\\s*)?)*(?!\\s*(?:\\(\\d+\\)|[\\u25b6\\u25ba\\u25b8\\u25b9\\u23f5\\u23f8\\u23f9\\u23fa\\U0001f50a\\U0001f509\\U0001f508\\U0001f507\\U0001f534\\U0001f7e2\\U0001f3b5\\U0001f3b6\\U0001f3a7\\U0001f4fa])|\\s*(?:Subscriptions|History|Library|Home|Explore|Playlists|Liked videos|Watch later|Shorts)\\s*[-\\u2013\\u2014]\\s*YouTube\\b)(?P<video>\\S.*?)\\s*[-\\u2013\\u2014]\\s*YouTube(?:\\s+and \\d+ more pages?)?(?:\\s*[-\\u2013\\u2014].*)?$",
+          "^(?:[\\u200b-\\u200f\\ufeff]*(?:\\(\\d+\\)\\s*)?(?:[\\u25b6\\u25ba\\u25b8\\u25b9\\u23f5\\u23f8\\u23f9\\u23fa\\U0001f50a\\U0001f509\\U0001f508\\U0001f507\\U0001f534\\U0001f7e2\\U0001f3b5\\U0001f3b6\\U0001f3a7\\U0001f4fa\\ufe0f]+\\s*)?)*(?:(?P<section>Subscriptions|History|Library|Home|Explore|Playlists|Liked videos|Watch later|Shorts)\\s*[-\\u2013\\u2014]\\s*)?YouTube(?:\\s+and \\d+ more pages?)?(?:\\s*[-\\u2013\\u2014]\\s*(?:Brave|Google Chrome|Mozilla Firefox|Microsoft\\u200b? Edge|Opera|Vivaldi|Personal|Work).*)?$"
         ]
       },
+      "sticky_seconds": 90,
       "session_key": "{video}",
       "presence": {
         "details": [
-          "{video}"
+          "{video}",
+          "Browsing YouTube[[ ({section})]]",
+          "Browsing YouTube"
         ],
         "state": [
+          "Watching on YouTube[[ • {app_label}]]",
           "Watching on YouTube"
         ],
-        "large_image": "youtube",
-        "large_text": "{video}",
+        "large_image": "{youtube_thumbnail|youtube}",
+        "large_text": "{video|YouTube}",
         "small_image": "browser",
         "small_text": "{app_label}",
         "timestamp": "session",
@@ -495,7 +509,7 @@
     {
       "id": "media-generic",
       "name": "Any other media session",
-      "enabled": true,
+      "enabled": false,
       "tier": "media",
       "match": {
         "media": {
