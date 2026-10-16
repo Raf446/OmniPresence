@@ -167,4 +167,4 @@ The compiled binary will be placed at `dist\OmniPresence.exe` with bundled confi
 
 ## 📄 License
 
-Distributed under the [MIT License](LICENSE). Free for personal and commercial usage.
+Distributed under the [MIT License](mit_license). Free for personal and commercial usage.
