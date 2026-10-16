@@ -1,0 +1,280 @@
+/* OmniPresence stylesheet: monochrome zinc/slate surface hierarchy (#0a0c10, #12151b) */
+
+QMainWindow,
+QWidget#WindowCanvas {
+    background-color: #0a0c10;
+    color: #e6e8ec;
+    font-family: "Inter", "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI";
+    font-size: 13px;
+}
+
+QFrame#WindowShell {
+    background-color: #0a0c10;
+    border: 1px solid rgba(255, 255, 255, 20);
+    border-radius: 10px;
+}
+
+QFrame#TitleBar {
+    background-color: #0d1016;
+    border-bottom: 1px solid rgba(255, 255, 255, 13);
+    border-top-left-radius: 9px;
+    border-top-right-radius: 9px;
+}
+
+QLabel#TitleBrand {
+    color: #e6e8ec;
+    font-weight: 600;
+}
+
+QLabel#TitleTelemetry,
+QLabel#StatusText {
+    color: #8b93a1;
+}
+
+QFrame#StatusPill {
+    background-color: #12151b;
+    border: 1px solid rgba(255, 255, 255, 16);
+    border-radius: 6px;
+    padding: 2px 8px;
+}
+
+QPushButton#TitleButton,
+QPushButton#TitleCloseButton {
+    background-color: transparent;
+    color: #8b93a1;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    min-width: 28px;
+    max-width: 28px;
+    min-height: 24px;
+    max-height: 24px;
+}
+
+QPushButton#TitleButton:hover {
+    background-color: #181c24;
+    color: #e6e8ec;
+    border-color: rgba(255, 255, 255, 18);
+}
+
+QPushButton#TitleCloseButton:hover {
+    background-color: rgba(240, 97, 109, 36);
+    color: #f0616d;
+    border-color: rgba(240, 97, 109, 90);
+}
+
+QFrame#PanelCard,
+QFrame#QuickControlsBar,
+QFrame#LogPanel {
+    background-color: #12151b;
+    border: 1px solid rgba(255, 255, 255, 13);
+    border-radius: 8px;
+}
+
+QLabel#SectionHeading {
+    color: #e6e8ec;
+    font-weight: 600;
+}
+
+QLabel#SectionCaption {
+    color: #8b93a1;
+}
+
+QLabel#RuleErrorBanner {
+    background-color: rgba(240, 97, 109, 24);
+    color: #f6b1b7;
+    border: 1px solid rgba(240, 97, 109, 90);
+    border-radius: 6px;
+    padding: 6px 10px;
+}
+
+/* Discord 1:1 profile card mockup */
+
+QFrame#DiscordCard {
+    background-color: #111214;
+    border: 1px solid rgba(255, 255, 255, 16);
+    border-radius: 10px;
+}
+
+QFrame#DiscordBox {
+    background-color: #1e1f22;
+    border: 1px solid rgba(255, 255, 255, 10);
+    border-radius: 8px;
+}
+
+QLabel#DcName {
+    color: #f2f3f5;
+}
+
+QLabel#DcHandle {
+    color: #b5bac1;
+}
+
+QLabel#DcSection {
+    color: #b5bac1;
+}
+
+QLabel#DcDetails {
+    color: #f2f3f5;
+}
+
+QLabel#DcState,
+QLabel#DcClock {
+    color: #b5bac1;
+}
+
+QLabel#DcEmpty {
+    color: #949ba4;
+}
+
+QPushButton#DiscordButton {
+    background-color: #2b2d31;
+    color: #f2f3f5;
+    border: 1px solid rgba(255, 255, 255, 14);
+    border-radius: 4px;
+    padding: 6px 10px;
+    min-height: 28px;
+}
+
+QPushButton#DiscordButton:hover {
+    background-color: #35373c;
+}
+
+QPushButton#DiscordButton:pressed {
+    background-color: #3f4147;
+}
+
+QLabel#PreviewNote {
+    color: #8b93a1;
+}
+
+QLabel#PreviewReason {
+    color: #7a8392;
+}
+
+/* Controls, inputs, and action buttons */
+
+QLineEdit {
+    background-color: #0d1016;
+    color: #e6e8ec;
+    border: 1px solid rgba(255, 255, 255, 16);
+    border-radius: 6px;
+    padding: 5px 9px;
+    min-height: 24px;
+    selection-background-color: rgba(106, 169, 255, 70);
+}
+
+QLineEdit:focus {
+    border: 1px solid #6aa9ff;
+    background-color: #0a0c10;
+}
+
+QLineEdit:disabled {
+    color: #7a8392;
+    background-color: #0c0e13;
+}
+
+QPushButton {
+    background-color: #181c24;
+    color: #e6e8ec;
+    border: 1px solid rgba(255, 255, 255, 18);
+    border-radius: 6px;
+    padding: 5px 12px;
+    min-height: 24px;
+}
+
+QPushButton:hover {
+    background-color: #1f2430;
+    border-color: rgba(255, 255, 255, 32);
+}
+
+QPushButton:pressed {
+    background-color: #141820;
+}
+
+QPushButton:focus {
+    border: 1px solid #6aa9ff;
+}
+
+QPushButton#PrimaryButton {
+    background-color: rgba(106, 169, 255, 28);
+    color: #e6e8ec;
+    border: 1px solid rgba(106, 169, 255, 110);
+}
+
+QPushButton#PrimaryButton:hover {
+    background-color: rgba(106, 169, 255, 46);
+}
+
+QPushButton#ToggleButton[active="true"] {
+    background-color: rgba(217, 164, 65, 30);
+    color: #f3d08a;
+    border: 1px solid rgba(217, 164, 65, 120);
+}
+
+/* Rules table and Activity logs */
+
+QTableWidget#RuleTable {
+    background-color: #0d1016;
+    alternate-background-color: #10141c;
+    color: #e6e8ec;
+    gridline-color: rgba(255, 255, 255, 10);
+    border: 1px solid rgba(255, 255, 255, 13);
+    border-radius: 6px;
+    selection-background-color: rgba(106, 169, 255, 28);
+    selection-color: #e6e8ec;
+}
+
+QTableWidget#RuleTable::item {
+    padding: 4px 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 8);
+}
+
+QTableWidget#RuleTable::item:focus {
+    border: 1px solid #6aa9ff;
+}
+
+QHeaderView::section {
+    background-color: #12151b;
+    color: #8b93a1;
+    border: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 16);
+    padding: 6px 8px;
+    font-weight: 600;
+}
+
+QPlainTextEdit#ActivityLogView {
+    background-color: #0d1016;
+    color: #d5d9e0;
+    border: 1px solid rgba(255, 255, 255, 13);
+    border-radius: 6px;
+    padding: 6px 8px;
+    selection-background-color: rgba(106, 169, 255, 65);
+}
+
+QScrollBar:vertical {
+    background: transparent;
+    width: 8px;
+    margin: 2px;
+}
+
+QScrollBar::handle:vertical {
+    background: rgba(255, 255, 255, 32);
+    border-radius: 3px;
+    min-height: 24px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: rgba(255, 255, 255, 56);
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+QToolTip {
+    background-color: #181c24;
+    color: #e6e8ec;
+    border: 1px solid rgba(255, 255, 255, 28);
+    padding: 4px 7px;
+}

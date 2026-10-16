@@ -1,0 +1,16 @@
+{
+  "discord_client_id": "1560465175188996176",
+  "discord_app_name": "OmniPresence",
+  "polling_interval": 1.0,
+  "auto_start": false,
+  "tray_minimized": true,
+  "idle_threshold_seconds": 300,
+  "show_idle_presence": true,
+  "show_buttons": true,
+  "media_preferred_apps": [
+    "spotify",
+    "applemusic"
+  ],
+  "build_linger_seconds": 4.0,
+  "log_capacity": 500
+}

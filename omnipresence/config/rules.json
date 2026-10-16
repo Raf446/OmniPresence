@@ -1,0 +1,419 @@
+{
+  "schema": 1,
+  "process_labels": {
+    "chrome.exe": "Google Chrome",
+    "brave.exe": "Brave",
+    "msedge.exe": "Microsoft Edge",
+    "code.exe": "Visual Studio Code",
+    "code - insiders.exe": "VS Code Insiders",
+    "vscodium.exe": "VSCodium",
+    "codeblocks.exe": "Code::Blocks",
+    "spotify.exe": "Spotify",
+    "javaw.exe": "Minecraft"
+  },
+  "languages": {
+    ".py": "Python",
+    ".pyw": "Python",
+    ".c": "C",
+    ".h": "C/C++ header",
+    ".cpp": "C++",
+    ".cc": "C++",
+    ".cxx": "C++",
+    ".hpp": "C++ header",
+    ".rs": "Rust",
+    ".go": "Go",
+    ".java": "Java",
+    ".kt": "Kotlin",
+    ".cs": "C#",
+    ".js": "JavaScript",
+    ".mjs": "JavaScript",
+    ".jsx": "JavaScript (JSX)",
+    ".ts": "TypeScript",
+    ".tsx": "TypeScript (TSX)",
+    ".html": "HTML",
+    ".css": "CSS",
+    ".scss": "SCSS",
+    ".json": "JSON",
+    ".yml": "YAML",
+    ".yaml": "YAML",
+    ".toml": "TOML",
+    ".md": "Markdown",
+    ".sql": "SQL",
+    ".sh": "Shell",
+    ".ps1": "PowerShell",
+    ".bat": "Batch",
+    ".lua": "Lua",
+    ".php": "PHP",
+    ".rb": "Ruby",
+    ".swift": "Swift",
+    ".dart": "Dart",
+    ".cbp": "Code::Blocks project"
+  },
+  "rules": [
+    {
+      "id": "manual-override",
+      "name": "Manual override",
+      "enabled": true,
+      "tier": "manual",
+      "match": { "manual": true },
+      "session_key": "manual",
+      "presence": {
+        "details": ["{manual_details}"],
+        "state": ["[[{manual_state}]]"],
+        "large_image": "manual",
+        "large_text": "Manual override",
+        "small_image": "manual",
+        "small_text": "Set from OmniPresence",
+        "timestamp": "session",
+        "activity_type": "playing"
+      }
+    },
+    {
+      "id": "build-event",
+      "name": "Compiler and build tools",
+      "enabled": true,
+      "tier": "build",
+      "match": { "builds": true },
+      "workspace": ["build_cwd"],
+      "session_key": "{target}",
+      "presence": {
+        "details": ["Compiling {target}..."],
+        "state": ["{project}[[ on {branch}]]", "{tool}"],
+        "large_image": "compiler",
+        "large_text": "{tool} build in progress",
+        "small_image": "build",
+        "small_text": "Building with {tool}",
+        "timestamp": "process",
+        "activity_type": "playing"
+      },
+      "buttons": [
+        { "label": "View Repository", "url": "{repo_url}" }
+      ]
+    },
+    {
+      "id": "minecraft",
+      "name": "Minecraft (Java Edition)",
+      "enabled": true,
+      "tier": "game",
+      "match": {
+        "processes": ["javaw.exe", "java.exe"],
+        "title_regex": ["^Minecraft\\*?\\s*(?P<version>\\d+(?:\\.\\d+){0,2})?"]
+      },
+      "idle_exempt": true,
+      "session_key": "{process_name}",
+      "presence": {
+        "details": ["Playing Minecraft"],
+        "state": ["Java Edition[[ {version}]]"],
+        "large_image": "minecraft",
+        "large_text": "Minecraft",
+        "small_image": "controller",
+        "small_text": "CPU {cpu}% | RAM {ram}%",
+        "timestamp": "process",
+        "activity_type": "playing"
+      }
+    },
+    {
+      "id": "game-known",
+      "name": "Known games",
+      "enabled": true,
+      "tier": "game",
+      "match": {
+        "processes": [
+          "cs2.exe",
+          "dota2.exe",
+          "valorant-win64-shipping.exe",
+          "eldenring.exe",
+          "gta5.exe",
+          "rdr2.exe",
+          "fortniteclient-win64-shipping.exe",
+          "r5apex.exe",
+          "overwatch.exe",
+          "rocketleague.exe",
+          "genshinimpact.exe",
+          "starrail.exe",
+          "cyberpunk2077.exe",
+          "witcher3.exe",
+          "terraria.exe",
+          "stardew valley.exe",
+          "hollow_knight.exe",
+          "tslgame.exe",
+          "destiny2.exe",
+          "league of legends.exe",
+          "robloxplayerbeta.exe"
+        ]
+      },
+      "idle_exempt": true,
+      "session_key": "{process_name}",
+      "presence": {
+        "details": ["Playing {title}", "Playing {app_label}"],
+        "state": ["CPU {cpu}% | RAM {ram}%"],
+        "large_image": "game",
+        "large_text": "{title}",
+        "small_image": "controller",
+        "small_text": "{app_label}",
+        "timestamp": "process",
+        "activity_type": "playing"
+      }
+    },
+    {
+      "id": "game-generic",
+      "name": "Generic game mode (fullscreen window)",
+      "enabled": true,
+      "tier": "game",
+      "match": {
+        "fullscreen": true,
+        "exclude_processes": [
+          "explorer.exe",
+          "applicationframehost.exe",
+          "searchhost.exe",
+          "startmenuexperiencehost.exe",
+          "shellexperiencehost.exe",
+          "lockapp.exe",
+          "chrome.exe",
+          "brave.exe",
+          "msedge.exe",
+          "firefox.exe",
+          "vlc.exe",
+          "mpv.exe",
+          "mpc-hc64.exe",
+          "potplayermini64.exe",
+          "code.exe",
+          "codeblocks.exe",
+          "powerpnt.exe",
+          "obs64.exe",
+          "discord.exe",
+          "spotify.exe",
+          "zoom.exe",
+          "ms-teams.exe",
+          "mstsc.exe",
+          "python.exe",
+          "pythonw.exe"
+        ]
+      },
+      "idle_exempt": true,
+      "session_key": "{process_name}",
+      "presence": {
+        "details": ["Playing {title}", "Playing {app_label}"],
+        "state": ["CPU {cpu}% | RAM {ram}%"],
+        "large_image": "game",
+        "large_text": "{title}",
+        "small_image": "controller",
+        "small_text": "{app_label}",
+        "timestamp": "process",
+        "activity_type": "playing"
+      }
+    },
+    {
+      "id": "vscode",
+      "name": "Visual Studio Code",
+      "enabled": true,
+      "tier": "editor",
+      "match": {
+        "processes": ["code.exe", "code - insiders.exe", "vscodium.exe"],
+        "title_regex": [
+          "^(?:[●•*]\\s*)?(?P<file>[^\\\\/]+?\\.[\\w+#-]{1,12}) - (?P<project>.+?) - (?:Visual Studio Code|VSCodium)(?: - Insiders)?(?: \\[.*\\])?\\s*$",
+          "^(?:[●•*]\\s*)?(?P<file>[^\\\\/]+?\\.[\\w+#-]{1,12}) - (?:Visual Studio Code|VSCodium)(?: - Insiders)?(?: \\[.*\\])?\\s*$",
+          "^(?:[●•*]\\s*)?(?P<file>.+?) - (?P<project>.+?) - (?:Visual Studio Code|VSCodium)(?: - Insiders)?(?: \\[.*\\])?\\s*$",
+          "^(?P<project>.+?) - (?:Visual Studio Code|VSCodium)(?: - Insiders)?(?: \\[.*\\])?\\s*$"
+        ]
+      },
+      "workspace": ["vscode_storage", "cmdline", "cwd"],
+      "sticky_seconds": 180,
+      "session_key": "{project}",
+      "presence": {
+        "details": ["Editing {file}", "Browsing the workspace"],
+        "state": ["{project}[[ on {branch}]][[ {sync_arrows}]]", "Visual Studio Code"],
+        "large_image": "vscode",
+        "large_text": "{app_label}",
+        "small_image": "editing",
+        "small_text": "[[{language}]]",
+        "timestamp": "session",
+        "activity_type": "playing"
+      },
+      "buttons": [
+        { "label": "View Repository", "url": "{repo_url}" }
+      ]
+    },
+    {
+      "id": "codeblocks",
+      "name": "Code::Blocks",
+      "enabled": true,
+      "tier": "editor",
+      "match": {
+        "processes": ["codeblocks.exe"],
+        "title_regex": [
+          "^\\*?(?P<file>[^\\[\\]]+?)\\s*\\[(?P<project>[^\\]]+)\\] - Code::Blocks(?: (?P<version>[\\d.]+\\S*))?",
+          "^\\*?(?P<project>.+?) - (?P<file>.+?) - Code::Blocks(?: (?P<version>[\\d.]+\\S*))?",
+          "^\\*?(?P<file>.+?) - Code::Blocks(?: (?P<version>[\\d.]+\\S*))?",
+          "^Code::Blocks(?: (?P<version>[\\d.]+\\S*))?"
+        ]
+      },
+      "workspace": ["cmdline", "build_cwd", "cwd"],
+      "sticky_seconds": 180,
+      "session_key": "{project}",
+      "presence": {
+        "details": ["Editing {file}", "Idling in Code::Blocks"],
+        "state": ["{project}[[ on {branch}]][[ {sync_arrows}]]", "Code::Blocks[[ {version}]]"],
+        "large_image": "codeblocks",
+        "large_text": "Code::Blocks[[ {version}]]",
+        "small_image": "editing",
+        "small_text": "[[{language}]]",
+        "timestamp": "session",
+        "activity_type": "playing"
+      },
+      "buttons": [
+        { "label": "View Repository", "url": "{repo_url}" }
+      ]
+    },
+    {
+      "id": "browser-github",
+      "name": "GitHub in the browser",
+      "enabled": true,
+      "tier": "editor",
+      "match": {
+        "processes": ["chrome.exe", "brave.exe", "msedge.exe"],
+        "title_regex": [
+          "^(?P<page>.+?) · (?P<kind>(?:Pull Request|Issue) #\\d+) · (?P<repo>[\\w.-]+/[\\w.-]+) · GitHub",
+          "^(?P<page>.+?) at (?P<ref>\\S+) · (?P<repo>[\\w.-]+/[\\w.-]+) · GitHub",
+          "^GitHub - (?P<repo>[\\w.-]+/[\\w.-]+)(?:: .*)?",
+          "^(?P<page>[^·]+?) · (?P<repo>[\\w.-]+/[\\w.-]+) · GitHub",
+          "^(?P<repo>[\\w.-]+/[\\w.-]+)(?:: .*?)? · GitHub"
+        ]
+      },
+      "sticky_seconds": 60,
+      "session_key": "{repo}",
+      "presence": {
+        "details": ["{kind} in {repo}", "Browsing {repo}"],
+        "state": ["[[{page}]]", "On GitHub"],
+        "large_image": "github",
+        "large_text": "{repo}",
+        "small_image": "browser",
+        "small_text": "{app_label}",
+        "timestamp": "session",
+        "activity_type": "playing"
+      },
+      "buttons": [
+        { "label": "Open on GitHub", "url": "https://github.com/{repo}" }
+      ]
+    },
+    {
+      "id": "browser-youtube",
+      "name": "YouTube in the browser",
+      "enabled": true,
+      "tier": "media",
+      "match": {
+        "processes": ["chrome.exe", "brave.exe", "msedge.exe"],
+        "title_regex": [
+          "^(?:\\(\\d+\\)\\s*)?(?!(?:Subscriptions|History|Library|Home|Explore|Playlists|Liked videos) - YouTube)(?P<video>.+?) - YouTube(?:\\s+and \\d+ more pages?)?(?: - .*)?$"
+        ]
+      },
+      "session_key": "{video}",
+      "presence": {
+        "details": ["{video}"],
+        "state": ["Watching on YouTube"],
+        "large_image": "youtube",
+        "large_text": "{video}",
+        "small_image": "browser",
+        "small_text": "{app_label}",
+        "timestamp": "session",
+        "activity_type": "watching"
+      },
+      "buttons": [
+        { "label": "Search on YouTube", "url": "https://www.youtube.com/results?search_query={video_q}" }
+      ]
+    },
+    {
+      "id": "spotify",
+      "name": "Spotify (Windows media session)",
+      "enabled": true,
+      "tier": "media",
+      "match": { "media": { "apps": ["spotify"] } },
+      "session_key": "{track}|{artist}",
+      "presence": {
+        "details": ["{track}"],
+        "state": ["[[by {artist}]]"],
+        "large_image": "spotify",
+        "large_text": "[[{album}]]",
+        "small_image": "playing",
+        "small_text": "Spotify",
+        "timestamp": "media",
+        "activity_type": "listening"
+      },
+      "buttons": [
+        { "label": "Search on Spotify", "url": "https://open.spotify.com/search/{query_q}" }
+      ]
+    },
+    {
+      "id": "apple-music",
+      "name": "Apple Music (Windows media session)",
+      "enabled": true,
+      "tier": "media",
+      "match": { "media": { "apps": ["applemusic", "apple music"] } },
+      "session_key": "{track}|{artist}",
+      "presence": {
+        "details": ["{track}"],
+        "state": ["[[by {artist}]]"],
+        "large_image": "applemusic",
+        "large_text": "[[{album}]]",
+        "small_image": "playing",
+        "small_text": "Apple Music",
+        "timestamp": "media",
+        "activity_type": "listening"
+      }
+    },
+    {
+      "id": "media-generic",
+      "name": "Any other media session",
+      "enabled": true,
+      "tier": "media",
+      "match": { "media": { "apps": [] } },
+      "session_key": "{track}|{artist}",
+      "presence": {
+        "details": ["{track}"],
+        "state": ["[[by {artist}]]", "{app_label}"],
+        "large_image": "media",
+        "large_text": "[[{album}]]",
+        "small_image": "playing",
+        "small_text": "{app_label}",
+        "timestamp": "media",
+        "activity_type": "listening"
+      }
+    },
+    {
+      "id": "idle-afk",
+      "name": "Away from keyboard",
+      "enabled": true,
+      "tier": "idle",
+      "match": { "afk": true },
+      "session_key": "afk",
+      "presence": {
+        "details": ["Away from keyboard"],
+        "state": ["Idle for {idle_for}"],
+        "large_image": "idle",
+        "large_text": "Away from keyboard",
+        "small_image": "idle",
+        "small_text": "No input for {idle_for}",
+        "timestamp": "session",
+        "activity_type": "playing"
+      }
+    },
+    {
+      "id": "idle-standby",
+      "name": "Standby (nothing detected)",
+      "enabled": true,
+      "tier": "idle",
+      "match": { "standby": true },
+      "session_key": "standby",
+      "presence": {
+        "details": ["Standing by"],
+        "state": ["No active context"],
+        "large_image": "idle",
+        "large_text": "Standing by",
+        "small_image": "idle",
+        "small_text": "OmniPresence is running",
+        "timestamp": "none",
+        "activity_type": "playing"
+      }
+    }
+  ]
+}
