@@ -1,6 +1,8 @@
 {
   "discord_client_id": "1560465175188996176",
   "discord_app_name": "OmniPresence",
+  "profile_display_name": "",
+  "profile_handle": "",
   "polling_interval": 1.0,
   "auto_start": false,
   "tray_minimized": true,

@@ -565,11 +565,18 @@ class PriorityEngine:
         if media is not None:
             rule = book.match_media(media.app_id)
             if rule is not None:
+                raw_art = (getattr(media, "artwork_url", "") or "").strip()
+                valid_art = (
+                    raw_art
+                    if raw_art.lower().startswith("https://") and len(raw_art) <= 256
+                    else ""
+                )
                 variables = {
                     **shared,
                     "track": media.title,
                     "artist": media.artist,
                     "album": media.album,
+                    "artwork_url": valid_art,
                     "app_label": book.media_label(media.app_id),
                     "query": f"{media.title} {media.artist}".strip(),
                 }
@@ -627,11 +634,29 @@ class PriorityEngine:
                     continue
                 buttons.append((label[:DISCORD_LABEL_LIMIT], url))
 
+        large_image = render_first(spec.large_image, variables)
+        large_text = render_first(spec.large_text, variables)
+
+        if rule.kind == "media":
+            dynamic_art = variables.get("artwork_url", "").strip()
+            if dynamic_art.lower().startswith("https://") and len(dynamic_art) <= 256:
+                large_image = dynamic_art
+            elif not large_image:
+                large_image = "spotify" if "spotify" in rule.id else "music_placeholder"
+
+            if not large_text:
+                track = variables.get("track", "").strip()
+                artist = variables.get("artist", "").strip()
+                if track and artist:
+                    large_text = f"{track} by {artist}"
+                elif track:
+                    large_text = track
+
         return PresenceData(
             details=_discord_text(render_first(spec.details, variables)),
             state=_discord_text(render_first(spec.state, variables)),
-            large_image=render_first(spec.large_image, variables),
-            large_text=_discord_text(render_first(spec.large_text, variables)),
+            large_image=large_image,
+            large_text=_discord_text(large_text),
             small_image=render_first(spec.small_image, variables),
             small_text=_discord_text(render_first(spec.small_text, variables)),
             start=start,

@@ -1,16 +1,29 @@
-"""Discord IPC lifecycle: connect, reconnect with backoff, coalesce and rate-limit updates."""
+"""Discord IPC lifecycle: connect, capture READY user profile, reconnect with backoff, coalesce and rate-limit updates."""
 from __future__ import annotations
 
 import asyncio
+import json
 import random
+import struct
 import threading
 import time
 from collections import deque
 from dataclasses import replace
 from enum import Enum
+from typing import Any
 
 from PySide6.QtCore import QThread, Signal
-from pypresence import ActivityType, AioPresence, DiscordNotFound, InvalidID, PyPresenceException, ServerError
+from pypresence import (
+    ActivityType,
+    AioPresence,
+    DiscordError,
+    DiscordNotFound,
+    InvalidID,
+    InvalidPipe,
+    PyPresenceException,
+    ServerError,
+)
+from pypresence.utils import get_ipc_path
 
 from core.priority_engine import PresenceData
 
@@ -41,10 +54,47 @@ class _ConnectionLost(Exception):
     """The pipe broke or Discord stopped answering."""
 
 
+class _HandshakeAwarePresence(AioPresence):
+    """Subclasses AioPresence to capture the READY payload (including active Discord user info) during IPC handshake."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.ready_user: dict[str, Any] = {}
+
+    async def handshake(self) -> None:
+        ipc_path = get_ipc_path(self.pipe)
+        if not ipc_path:
+            raise DiscordNotFound
+
+        await self.create_reader_writer(ipc_path)
+        self.send_data(0, {"v": 1, "client_id": self.client_id})
+        assert self.sock_reader is not None
+        preamble = await self.sock_reader.read(8)
+        if len(preamble) < 8:
+            raise InvalidPipe
+        _, length = struct.unpack("<ii", preamble)
+        raw_payload = await self.sock_reader.read(length)
+        data = json.loads(raw_payload.decode("utf-8", errors="replace"))
+        if "code" in data:
+            if data.get("message") == "Invalid Client ID":
+                raise InvalidID
+            raise DiscordError(data["code"], data.get("message", "Discord IPC error"))
+
+        # Capture user object from READY dispatch (supports both data['data']['user'] and data['user'])
+        inner = data.get("data") if isinstance(data.get("data"), dict) else {}
+        user = inner.get("user") or data.get("user")
+        if isinstance(user, dict):
+            self.ready_user = user
+
+        if self._events_on:
+            self.sock_reader.feed_data = self.on_event
+
+
 class IPCManager(QThread):
     status_changed = Signal(str, str)
     message = Signal(str, str)
     presence_sent = Signal(object)
+    user_detected = Signal(str, str)
 
     # Discord documents five activity updates per twenty seconds; stay one below.
     WINDOW_SECONDS = 20.0
@@ -63,6 +113,27 @@ class IPCManager(QThread):
         self._loop: asyncio.AbstractEventLoop | None = None
         self._wake: asyncio.Event | None = None
         self._status = ("", "")
+
+    @staticmethod
+    def extract_user_identity(user: MappingOrDict) -> tuple[str, str]:
+        """Extract (display_name, handle) from Discord's READY user dictionary."""
+        if not isinstance(user, dict):
+            return "", ""
+        username = str(user.get("username") or "").strip()
+        global_name = str(user.get("global_name") or "").strip()
+        discriminator = str(user.get("discriminator") or "").strip()
+
+        display_name = global_name or username
+        if username:
+            if discriminator and discriminator != "0":
+                handle = f"@{username}#{discriminator}"
+            else:
+                handle = f"@{username}"
+        elif global_name:
+            handle = f"@{global_name.lower().replace(' ', '_')}"
+        else:
+            handle = ""
+        return display_name, handle
 
     def submit(self, presence: PresenceData | None) -> None:
         with self._lock:
@@ -125,7 +196,7 @@ class IPCManager(QThread):
                 continue
 
             self._set_status(ConnectionState.CONNECTING, "Connecting to Discord")
-            rpc = AioPresence(client_id, loop=asyncio.get_running_loop())
+            rpc = _HandshakeAwarePresence(client_id, loop=asyncio.get_running_loop())
             try:
                 await asyncio.wait_for(rpc.connect(), timeout=self.CONNECT_TIMEOUT)
             except InvalidID:
@@ -143,8 +214,15 @@ class IPCManager(QThread):
                 continue
 
             backoff.reset()
-            self._set_status(ConnectionState.CONNECTED, "Connected to Discord")
-            self.message.emit("info", "Discord IPC connected")
+            display_name, handle = self.extract_user_identity(rpc.ready_user)
+            if display_name or handle:
+                self.user_detected.emit(display_name, handle)
+                self._set_status(ConnectionState.CONNECTED, f"Connected ({handle or display_name})")
+                self.message.emit("info", f"Discord IPC connected as {display_name} ({handle})".strip())
+            else:
+                self._set_status(ConnectionState.CONNECTED, "Connected to Discord")
+                self.message.emit("info", "Discord IPC connected")
+
             try:
                 await self._serve(rpc, client_id)
             except _ConnectionLost as exc:
@@ -200,15 +278,22 @@ class IPCManager(QThread):
                 return
             await self._update(rpc, presence)
         except ServerError as exc:
-            if presence is not None and presence.buttons:
-                self.message.emit("warn", f"Discord rejected the presence ({exc}), retrying without buttons")
-                try:
-                    await self._update(rpc, replace(presence, buttons=()))
-                    return
-                except ServerError as retry_exc:
-                    exc = retry_exc
-                except (PyPresenceException, OSError, asyncio.TimeoutError, AssertionError) as lost:
-                    raise _ConnectionLost(type(lost).__name__) from lost
+            if presence is not None:
+                fallback = presence
+                if fallback.buttons:
+                    self.message.emit("warn", f"Discord rejected the presence ({exc}), retrying without buttons")
+                    fallback = replace(fallback, buttons=())
+                elif fallback.large_image and fallback.large_image.lower().startswith(("http://", "https://")):
+                    self.message.emit("warn", f"Discord rejected external artwork URL ({exc}), using fallback icon")
+                    fallback = replace(fallback, large_image="music_placeholder")
+                if fallback != presence:
+                    try:
+                        await self._update(rpc, fallback)
+                        return
+                    except ServerError as retry_exc:
+                        exc = retry_exc
+                    except (PyPresenceException, OSError, asyncio.TimeoutError, AssertionError) as lost:
+                        raise _ConnectionLost(type(lost).__name__) from lost
             self.message.emit("error", f"Discord rejected the presence: {exc}")
         except (PyPresenceException, OSError, asyncio.TimeoutError, AssertionError) as exc:
             raise _ConnectionLost(type(exc).__name__) from exc
@@ -236,3 +321,6 @@ class IPCManager(QThread):
                 writer.close()
             except Exception:
                 pass
+
+
+MappingOrDict = dict[str, Any]

@@ -39,6 +39,8 @@ def _coerce(value: Any, default: Any) -> Any:
 class Settings:
     discord_client_id: str = ""
     discord_app_name: str = "OmniPresence"
+    profile_display_name: str = ""
+    profile_handle: str = ""
     polling_interval: float = 1.0
     auto_start: bool = False
     tray_minimized: bool = True
@@ -104,6 +106,7 @@ class StateManager(QObject):
     paused_changed = Signal(bool)
     manual_changed = Signal(bool)
     client_id_changed = Signal(str)
+    profile_changed = Signal(str, str)
 
     def __init__(
         self, settings: Settings, rules_path: Path, rulebook: RuleBook, rule_error: str = "", parent=None
@@ -121,6 +124,7 @@ class StateManager(QObject):
         self.connection: tuple[str, str] = ("disconnected", "Starting")
         self.paused = False
 
+        self._ipc_profile: tuple[str, str] = ("", "")
         self._activities: tuple = ()
         self._media = None
         self._manual: tuple[str, str] | None = None
@@ -129,6 +133,23 @@ class StateManager(QObject):
         self._last_signature: tuple | None = None
         self._last_outgoing: Any = object()
         self._last_trigger: tuple[str, str] | None = None
+
+    @property
+    def profile(self) -> tuple[str, str]:
+        """Return (display_name, handle) prioritizing settings.json overrides, then IPC READY user, then neutral fallback."""
+        cfg_name = self.settings.profile_display_name.strip()
+        cfg_handle = self.settings.profile_handle.strip()
+        ipc_name, ipc_handle = self._ipc_profile
+
+        display_name = cfg_name or ipc_name or "Discord User"
+        raw_handle = cfg_handle or ipc_handle
+        if raw_handle:
+            handle = raw_handle if raw_handle.startswith("@") else f"@{raw_handle}"
+        elif cfg_name:
+            handle = "@" + "_".join(cfg_name.lower().split())
+        else:
+            handle = "@discord"
+        return display_name, handle
 
     def log(self, level: str, source: str, text: str) -> None:
         entry = LogEntry(time.time(), level, source, text)
@@ -145,10 +166,13 @@ class StateManager(QObject):
 
     @Slot(object)
     def on_media(self, info) -> None:
+        prev_key = getattr(self._media, "track_key", None) if self._media is not None else None
+        new_key = getattr(info, "track_key", None) if info is not None else None
         self._media = info
         if info is None:
-            self.log("info", "media", "playback stopped")
-        else:
+            if prev_key is not None:
+                self.log("info", "media", "playback stopped")
+        elif new_key != prev_key:
             self.log("info", "media", f"now playing: {info.title}" + (f" by {info.artist}" if info.artist else ""))
         self._reevaluate()
 
@@ -163,6 +187,13 @@ class StateManager(QObject):
     @Slot(str, str)
     def on_ipc_message(self, level: str, text: str) -> None:
         self.log(level, "ipc", text)
+
+    @Slot(str, str)
+    def on_ipc_user(self, display_name: str, handle: str) -> None:
+        updated = (display_name.strip(), handle.strip())
+        if updated != self._ipc_profile:
+            self._ipc_profile = updated
+            self.profile_changed.emit(*self.profile)
 
     @Slot(str, str)
     def on_connection(self, status: str, detail: str) -> None:

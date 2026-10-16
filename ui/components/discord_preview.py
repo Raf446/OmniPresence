@@ -1,7 +1,6 @@
 """Live mockup of the Discord profile card with banner, avatar status ring, smooth media progress, and color-coded priority tier pills."""
 from __future__ import annotations
 
-import getpass
 import math
 import time
 
@@ -79,7 +78,9 @@ class ImageCache:
             self._pending[url].append(callback)
             return None
         self._pending[url] = [callback]
-        reply = self._manager.get(QNetworkRequest(QUrl(url)))
+        req = QNetworkRequest(QUrl(url))
+        req.setRawHeader(b"User-Agent", b"OmniPresence/1.0")
+        reply = self._manager.get(req)
         reply.finished.connect(lambda r=reply, u=url: self._done(r, u))
         return None
 
@@ -132,14 +133,19 @@ class ProfileHeader(QWidget):
     BANNER = 68
     AVATAR = 72
 
-    def __init__(self, name: str, parent=None) -> None:
+    def __init__(self, name: str = "Discord User", parent=None) -> None:
         super().__init__(parent)
-        self._initial = (name[:1] or "?").upper()
+        self._initial = (name.strip()[:1] or "D").upper()
         self._accent = QColor(TIER_COLORS[4])
         self._tier_badge = "STANDBY"
         self._ipc_status = "disconnected"
         self.setFixedHeight(self.BANNER + self.AVATAR // 2 + 6)
         self.setAccessibleName("Profile header preview")
+
+    def set_name(self, name: str) -> None:
+        cleaned = (name or "").strip()
+        self._initial = (cleaned[:1] or "D").upper()
+        self.update()
 
     def set_tier(self, tier: Tier | None) -> None:
         if tier is None:
@@ -458,7 +464,7 @@ class TierStrip(QWidget):
                 fill = QColor(20, 24, 32, 180)
                 edge = QColor(base_color)
                 edge.setAlpha(55)
-                ink = QColor( base_color )
+                ink = QColor(base_color)
                 ink.setAlpha(175)
                 sub_ink = QColor(DIM)
                 pen_w = 1.0
@@ -503,7 +509,13 @@ class TierStrip(QWidget):
 
 
 class DiscordPreview(QWidget):
-    def __init__(self, app_name: str, parent=None) -> None:
+    def __init__(
+        self,
+        app_name: str,
+        display_name: str = "Discord User",
+        handle: str = "@discord",
+        parent=None,
+    ) -> None:
         super().__init__(parent)
         self._app_name = app_name
         self._start: float | None = None
@@ -513,7 +525,6 @@ class DiscordPreview(QWidget):
         self._resolution: Resolution | None = None
         self._buttons: list[QPushButton] = []
 
-        user = getpass.getuser()
         self._card = QFrame(objectName="DiscordCard")
         self._card_shadow = QGraphicsDropShadowEffect(self._card)
         self._card_shadow.setBlurRadius(24)
@@ -524,7 +535,7 @@ class DiscordPreview(QWidget):
         card_layout = QVBoxLayout(self._card)
         card_layout.setContentsMargins(0, 0, 0, 0)
         card_layout.setSpacing(0)
-        self._header = ProfileHeader(user)
+        self._header = ProfileHeader(display_name)
         card_layout.addWidget(self._header)
 
         identity = QVBoxLayout()
@@ -533,18 +544,17 @@ class DiscordPreview(QWidget):
 
         name_row = QHBoxLayout()
         name_row.setSpacing(8)
-        name = QLabel(user, objectName="DcName")
-        name.setFont(ui_font(17, QFont.Weight.Bold))
-        name_row.addWidget(name)
+        self._name_label = ElidedLabel(objectName="DcName")
+        self._name_label.setFont(ui_font(17, QFont.Weight.Bold))
+        name_row.addWidget(self._name_label, 1)
         self._role_pill = QLabel("Rich Presence", objectName="DcBadgePill")
         self._role_pill.setFont(mono_font(10, QFont.Weight.DemiBold))
-        name_row.addWidget(self._role_pill)
-        name_row.addStretch(1)
+        name_row.addWidget(self._role_pill, 0)
         identity.addLayout(name_row)
 
-        handle = QLabel(f"@{user.lower()} \u00b7 OmniPresence Engine", objectName="DcHandle")
-        handle.setFont(ui_font(12))
-        identity.addWidget(handle)
+        self._handle_label = ElidedLabel(objectName="DcHandle")
+        self._handle_label.setFont(ui_font(12))
+        identity.addWidget(self._handle_label)
         card_layout.addLayout(identity)
 
         self._box = QFrame(objectName="DiscordBox")
@@ -631,8 +641,19 @@ class DiscordPreview(QWidget):
         self._timer.timeout.connect(self._tick)
         self._timer.start()
 
+        self.set_profile(display_name, handle)
         self.set_resolution(None)
         self.set_connection("disconnected", "Starting")
+
+    def set_profile(self, display_name: str, handle: str) -> None:
+        """Reactively update the profile display name, handle, and avatar initial."""
+        clean_name = (display_name or "").strip() or "Discord User"
+        clean_handle = (handle or "").strip() or "@discord"
+        if not clean_handle.startswith("@"):
+            clean_handle = f"@{clean_handle}"
+        self._header.set_name(clean_name)
+        self._name_label.setText(clean_name)
+        self._handle_label.setText(f"{clean_handle} \u00b7 OmniPresence Engine")
 
     def set_paused(self, paused: bool) -> None:
         self._paused = paused

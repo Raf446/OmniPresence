@@ -339,7 +339,8 @@ class MainWindow(QMainWindow):
         preview_title.setFont(ui_font(13, QFont.Weight.DemiBold))
         left_layout.addWidget(preview_title)
 
-        self._preview = DiscordPreview(app_name, left_col)
+        display_name, handle = state.profile
+        self._preview = DiscordPreview(app_name, display_name, handle, left_col)
         left_layout.addWidget(self._preview, 1)
         body_layout.addWidget(left_col, 0)
 
@@ -377,6 +378,7 @@ class MainWindow(QMainWindow):
         state.paused_changed.connect(self._on_paused_changed)
         state.manual_changed.connect(self._controls.set_manual_state)
         state.client_id_changed.connect(self._controls.set_client_id_text)
+        state.profile_changed.connect(self._preview.set_profile)
 
         self._on_connection_changed(*state.connection)
         if state.resolution is not None:

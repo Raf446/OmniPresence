@@ -55,11 +55,17 @@
       "name": "Manual override",
       "enabled": true,
       "tier": "manual",
-      "match": { "manual": true },
+      "match": {
+        "manual": true
+      },
       "session_key": "manual",
       "presence": {
-        "details": ["{manual_details}"],
-        "state": ["[[{manual_state}]]"],
+        "details": [
+          "{manual_details}"
+        ],
+        "state": [
+          "[[{manual_state}]]"
+        ],
         "large_image": "manual",
         "large_text": "Manual override",
         "small_image": "manual",
@@ -73,12 +79,21 @@
       "name": "Compiler and build tools",
       "enabled": true,
       "tier": "build",
-      "match": { "builds": true },
-      "workspace": ["build_cwd"],
+      "match": {
+        "builds": true
+      },
+      "workspace": [
+        "build_cwd"
+      ],
       "session_key": "{target}",
       "presence": {
-        "details": ["Compiling {target}..."],
-        "state": ["{project}[[ on {branch}]]", "{tool}"],
+        "details": [
+          "Compiling {target}..."
+        ],
+        "state": [
+          "{project}[[ on {branch}]]",
+          "{tool}"
+        ],
         "large_image": "compiler",
         "large_text": "{tool} build in progress",
         "small_image": "build",
@@ -87,7 +102,10 @@
         "activity_type": "playing"
       },
       "buttons": [
-        { "label": "View Repository", "url": "{repo_url}" }
+        {
+          "label": "View Repository",
+          "url": "{repo_url}"
+        }
       ]
     },
     {
@@ -96,14 +114,23 @@
       "enabled": true,
       "tier": "game",
       "match": {
-        "processes": ["javaw.exe", "java.exe"],
-        "title_regex": ["^Minecraft\\*?\\s*(?P<version>\\d+(?:\\.\\d+){0,2})?"]
+        "processes": [
+          "javaw.exe",
+          "java.exe"
+        ],
+        "title_regex": [
+          "^Minecraft\\*?\\s*(?P<version>\\d+(?:\\.\\d+){0,2})?"
+        ]
       },
       "idle_exempt": true,
       "session_key": "{process_name}",
       "presence": {
-        "details": ["Playing Minecraft"],
-        "state": ["Java Edition[[ {version}]]"],
+        "details": [
+          "Playing Minecraft"
+        ],
+        "state": [
+          "Java Edition[[ {version}]]"
+        ],
         "large_image": "minecraft",
         "large_text": "Minecraft",
         "small_image": "controller",
@@ -145,8 +172,13 @@
       "idle_exempt": true,
       "session_key": "{process_name}",
       "presence": {
-        "details": ["Playing {title}", "Playing {app_label}"],
-        "state": ["CPU {cpu}% | RAM {ram}%"],
+        "details": [
+          "Playing {title}",
+          "Playing {app_label}"
+        ],
+        "state": [
+          "CPU {cpu}% | RAM {ram}%"
+        ],
         "large_image": "game",
         "large_text": "{title}",
         "small_image": "controller",
@@ -193,8 +225,13 @@
       "idle_exempt": true,
       "session_key": "{process_name}",
       "presence": {
-        "details": ["Playing {title}", "Playing {app_label}"],
-        "state": ["CPU {cpu}% | RAM {ram}%"],
+        "details": [
+          "Playing {title}",
+          "Playing {app_label}"
+        ],
+        "state": [
+          "CPU {cpu}% | RAM {ram}%"
+        ],
         "large_image": "game",
         "large_text": "{title}",
         "small_image": "controller",
@@ -206,10 +243,14 @@
     {
       "id": "vscode",
       "name": "Visual Studio Code",
-      "enabled": true,
+      "enabled": false,
       "tier": "editor",
       "match": {
-        "processes": ["code.exe", "code - insiders.exe", "vscodium.exe"],
+        "processes": [
+          "code.exe",
+          "code - insiders.exe",
+          "vscodium.exe"
+        ],
         "title_regex": [
           "^(?:[●•*]\\s*)?(?P<file>[^\\\\/]+?\\.[\\w+#-]{1,12}) - (?P<project>.+?) - (?:Visual Studio Code|VSCodium)(?: - Insiders)?(?: \\[.*\\])?\\s*$",
           "^(?:[●•*]\\s*)?(?P<file>[^\\\\/]+?\\.[\\w+#-]{1,12}) - (?:Visual Studio Code|VSCodium)(?: - Insiders)?(?: \\[.*\\])?\\s*$",
@@ -217,12 +258,22 @@
           "^(?P<project>.+?) - (?:Visual Studio Code|VSCodium)(?: - Insiders)?(?: \\[.*\\])?\\s*$"
         ]
       },
-      "workspace": ["vscode_storage", "cmdline", "cwd"],
+      "workspace": [
+        "vscode_storage",
+        "cmdline",
+        "cwd"
+      ],
       "sticky_seconds": 180,
       "session_key": "{project}",
       "presence": {
-        "details": ["Editing {file}", "Browsing the workspace"],
-        "state": ["{project}[[ on {branch}]][[ {sync_arrows}]]", "Visual Studio Code"],
+        "details": [
+          "Editing {file}",
+          "Browsing the workspace"
+        ],
+        "state": [
+          "{project}[[ on {branch}]][[ {sync_arrows}]]",
+          "Visual Studio Code"
+        ],
         "large_image": "vscode",
         "large_text": "{app_label}",
         "small_image": "editing",
@@ -231,16 +282,21 @@
         "activity_type": "playing"
       },
       "buttons": [
-        { "label": "View Repository", "url": "{repo_url}" }
+        {
+          "label": "View Repository",
+          "url": "{repo_url}"
+        }
       ]
     },
     {
       "id": "codeblocks",
       "name": "Code::Blocks",
-      "enabled": true,
+      "enabled": false,
       "tier": "editor",
       "match": {
-        "processes": ["codeblocks.exe"],
+        "processes": [
+          "codeblocks.exe"
+        ],
         "title_regex": [
           "^\\*?(?P<file>[^\\[\\]]+?)\\s*\\[(?P<project>[^\\]]+)\\] - Code::Blocks(?: (?P<version>[\\d.]+\\S*))?",
           "^\\*?(?P<project>.+?) - (?P<file>.+?) - Code::Blocks(?: (?P<version>[\\d.]+\\S*))?",
@@ -248,12 +304,22 @@
           "^Code::Blocks(?: (?P<version>[\\d.]+\\S*))?"
         ]
       },
-      "workspace": ["cmdline", "build_cwd", "cwd"],
+      "workspace": [
+        "cmdline",
+        "build_cwd",
+        "cwd"
+      ],
       "sticky_seconds": 180,
       "session_key": "{project}",
       "presence": {
-        "details": ["Editing {file}", "Idling in Code::Blocks"],
-        "state": ["{project}[[ on {branch}]][[ {sync_arrows}]]", "Code::Blocks[[ {version}]]"],
+        "details": [
+          "Editing {file}",
+          "Idling in Code::Blocks"
+        ],
+        "state": [
+          "{project}[[ on {branch}]][[ {sync_arrows}]]",
+          "Code::Blocks[[ {version}]]"
+        ],
         "large_image": "codeblocks",
         "large_text": "Code::Blocks[[ {version}]]",
         "small_image": "editing",
@@ -262,7 +328,10 @@
         "activity_type": "playing"
       },
       "buttons": [
-        { "label": "View Repository", "url": "{repo_url}" }
+        {
+          "label": "View Repository",
+          "url": "{repo_url}"
+        }
       ]
     },
     {
@@ -271,7 +340,11 @@
       "enabled": true,
       "tier": "editor",
       "match": {
-        "processes": ["chrome.exe", "brave.exe", "msedge.exe"],
+        "processes": [
+          "chrome.exe",
+          "brave.exe",
+          "msedge.exe"
+        ],
         "title_regex": [
           "^(?P<page>.+?) · (?P<kind>(?:Pull Request|Issue) #\\d+) · (?P<repo>[\\w.-]+/[\\w.-]+) · GitHub",
           "^(?P<page>.+?) at (?P<ref>\\S+) · (?P<repo>[\\w.-]+/[\\w.-]+) · GitHub",
@@ -283,8 +356,14 @@
       "sticky_seconds": 60,
       "session_key": "{repo}",
       "presence": {
-        "details": ["{kind} in {repo}", "Browsing {repo}"],
-        "state": ["[[{page}]]", "On GitHub"],
+        "details": [
+          "{kind} in {repo}",
+          "Browsing {repo}"
+        ],
+        "state": [
+          "[[{page}]]",
+          "On GitHub"
+        ],
         "large_image": "github",
         "large_text": "{repo}",
         "small_image": "browser",
@@ -293,7 +372,10 @@
         "activity_type": "playing"
       },
       "buttons": [
-        { "label": "Open on GitHub", "url": "https://github.com/{repo}" }
+        {
+          "label": "Open on GitHub",
+          "url": "https://github.com/{repo}"
+        }
       ]
     },
     {
@@ -302,15 +384,23 @@
       "enabled": true,
       "tier": "media",
       "match": {
-        "processes": ["chrome.exe", "brave.exe", "msedge.exe"],
+        "processes": [
+          "chrome.exe",
+          "brave.exe",
+          "msedge.exe"
+        ],
         "title_regex": [
           "^(?:\\(\\d+\\)\\s*)?(?!(?:Subscriptions|History|Library|Home|Explore|Playlists|Liked videos) - YouTube)(?P<video>.+?) - YouTube(?:\\s+and \\d+ more pages?)?(?: - .*)?$"
         ]
       },
       "session_key": "{video}",
       "presence": {
-        "details": ["{video}"],
-        "state": ["Watching on YouTube"],
+        "details": [
+          "{video}"
+        ],
+        "state": [
+          "Watching on YouTube"
+        ],
         "large_image": "youtube",
         "large_text": "{video}",
         "small_image": "browser",
@@ -319,7 +409,10 @@
         "activity_type": "watching"
       },
       "buttons": [
-        { "label": "Search on YouTube", "url": "https://www.youtube.com/results?search_query={video_q}" }
+        {
+          "label": "Search on YouTube",
+          "url": "https://www.youtube.com/results?search_query={video_q}"
+        }
       ]
     },
     {
@@ -327,20 +420,40 @@
       "name": "Spotify (Windows media session)",
       "enabled": true,
       "tier": "media",
-      "match": { "media": { "apps": ["spotify"] } },
+      "match": {
+        "media": {
+          "apps": [
+            "spotify"
+          ]
+        }
+      },
       "session_key": "{track}|{artist}",
       "presence": {
-        "details": ["{track}"],
-        "state": ["[[by {artist}]]"],
-        "large_image": "spotify",
-        "large_text": "[[{album}]]",
+        "details": [
+          "{track}"
+        ],
+        "state": [
+          "[[by {artist}]]"
+        ],
+        "large_image": [
+          "{artwork_url}",
+          "spotify"
+        ],
+        "large_text": [
+          "{album}",
+          "{track} by {artist}",
+          "{track}"
+        ],
         "small_image": "playing",
         "small_text": "Spotify",
         "timestamp": "media",
         "activity_type": "listening"
       },
       "buttons": [
-        { "label": "Search on Spotify", "url": "https://open.spotify.com/search/{query_q}" }
+        {
+          "label": "Search on Spotify",
+          "url": "https://open.spotify.com/search/{query_q}"
+        }
       ]
     },
     {
@@ -348,13 +461,31 @@
       "name": "Apple Music (Windows media session)",
       "enabled": true,
       "tier": "media",
-      "match": { "media": { "apps": ["applemusic", "apple music"] } },
+      "match": {
+        "media": {
+          "apps": [
+            "applemusic",
+            "apple music"
+          ]
+        }
+      },
       "session_key": "{track}|{artist}",
       "presence": {
-        "details": ["{track}"],
-        "state": ["[[by {artist}]]"],
-        "large_image": "applemusic",
-        "large_text": "[[{album}]]",
+        "details": [
+          "{track}"
+        ],
+        "state": [
+          "[[by {artist}]]"
+        ],
+        "large_image": [
+          "{artwork_url}",
+          "applemusic"
+        ],
+        "large_text": [
+          "{album}",
+          "{track} by {artist}",
+          "{track}"
+        ],
         "small_image": "playing",
         "small_text": "Apple Music",
         "timestamp": "media",
@@ -366,13 +497,29 @@
       "name": "Any other media session",
       "enabled": true,
       "tier": "media",
-      "match": { "media": { "apps": [] } },
+      "match": {
+        "media": {
+          "apps": []
+        }
+      },
       "session_key": "{track}|{artist}",
       "presence": {
-        "details": ["{track}"],
-        "state": ["[[by {artist}]]", "{app_label}"],
-        "large_image": "media",
-        "large_text": "[[{album}]]",
+        "details": [
+          "{track}"
+        ],
+        "state": [
+          "[[by {artist}]]",
+          "{app_label}"
+        ],
+        "large_image": [
+          "{artwork_url}",
+          "music_placeholder"
+        ],
+        "large_text": [
+          "{album}",
+          "{track} by {artist}",
+          "{track}"
+        ],
         "small_image": "playing",
         "small_text": "{app_label}",
         "timestamp": "media",
@@ -384,11 +531,17 @@
       "name": "Away from keyboard",
       "enabled": true,
       "tier": "idle",
-      "match": { "afk": true },
+      "match": {
+        "afk": true
+      },
       "session_key": "afk",
       "presence": {
-        "details": ["Away from keyboard"],
-        "state": ["Idle for {idle_for}"],
+        "details": [
+          "Away from keyboard"
+        ],
+        "state": [
+          "Idle for {idle_for}"
+        ],
         "large_image": "idle",
         "large_text": "Away from keyboard",
         "small_image": "idle",
@@ -402,11 +555,17 @@
       "name": "Standby (nothing detected)",
       "enabled": true,
       "tier": "idle",
-      "match": { "standby": true },
+      "match": {
+        "standby": true
+      },
       "session_key": "standby",
       "presence": {
-        "details": ["Standing by"],
-        "state": ["No active context"],
+        "details": [
+          "Standing by"
+        ],
+        "state": [
+          "No active context"
+        ],
         "large_image": "idle",
         "large_text": "Standing by",
         "small_image": "idle",

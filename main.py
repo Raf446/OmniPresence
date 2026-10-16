@@ -108,6 +108,7 @@ def main(argv: list[str] | None = None) -> int:
     ipc.status_changed.connect(state.on_connection)
     ipc.message.connect(state.on_ipc_message)
     ipc.presence_sent.connect(state.on_presence_sent)
+    ipc.user_detected.connect(state.on_ipc_user)
 
     # Connect StateManager -> workers
     state.outgoing_changed.connect(ipc.submit)
