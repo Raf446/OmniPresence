@@ -12,6 +12,7 @@ from typing import Any
 from PySide6.QtCore import QObject, Signal, Slot
 
 from core.priority_engine import (
+    CustomRPCConfig,
     EngineInput,
     PresenceData,
     PriorityEngine,
@@ -19,6 +20,7 @@ from core.priority_engine import (
     RuleBook,
     RuleError,
 )
+from extractors.github_resolver import GITHUB_AVATAR_RESOLVER
 from extractors.youtube_resolver import YOUTUBE_THUMBNAIL_RESOLVER
 
 CLIENT_ID_ENV = "OMNIPRESENCE_CLIENT_ID"
@@ -106,6 +108,7 @@ class StateManager(QObject):
     rules_changed = Signal(object, str)
     paused_changed = Signal(bool)
     manual_changed = Signal(bool)
+    custom_rpc_changed = Signal(bool, object)
     client_id_changed = Signal(str)
     profile_changed = Signal(str, str)
 
@@ -128,7 +131,7 @@ class StateManager(QObject):
         self._ipc_profile: tuple[str, str] = ("", "")
         self._activities: tuple = ()
         self._media = None
-        self._manual: tuple[str, str] | None = None
+        self._manual: CustomRPCConfig | None = None
         self._idle_seconds = 0.0
         self._shared: dict[str, str] = {}
         self._last_signature: tuple | None = None
@@ -136,6 +139,7 @@ class StateManager(QObject):
         self._last_trigger: tuple[str, str] | None = None
 
         YOUTUBE_THUMBNAIL_RESOLVER.signals.resolved.connect(self.on_youtube_thumbnail)
+        GITHUB_AVATAR_RESOLVER.signals.resolved.connect(self.on_github_avatar)
 
     @property
     def profile(self) -> tuple[str, str]:
@@ -192,6 +196,11 @@ class StateManager(QObject):
         self.log("info", "youtube", f"thumbnail matched: {video_title}")
         self._reevaluate()
 
+    @Slot(str, str, str)
+    def on_github_avatar(self, _norm_key: str, username: str, url: str) -> None:
+        self.log("info", "github", f"avatar resolved: @{username}")
+        self._reevaluate()
+
     @Slot(str, str)
     def on_ipc_message(self, level: str, text: str) -> None:
         self.log(level, "ipc", text)
@@ -219,18 +228,41 @@ class StateManager(QObject):
         parts = [p for p in (presence.details, presence.state) if p]
         self.log("info", "ipc", "presence sent: " + " | ".join(parts))
 
-    def set_manual(self, enabled: bool, details: str, state: str) -> bool:
-        details, state = details.strip(), state.strip()
-        if enabled and len(details) < 2:
-            self.log("warn", "manual", "override needs a details line of at least 2 characters")
+    def set_custom_rpc(self, enabled: bool, config: CustomRPCConfig) -> bool:
+        """Engage or disengage full PreMiD-style Custom RPC on P1 Manual Override."""
+        if enabled and len(config.details.strip()) < 2:
+            self.log("warn", "custom-rpc", "Custom RPC requires a Details line of at least 2 characters")
             return False
+
+        custom_app_id = config.app_id.strip()
+        if enabled and custom_app_id:
+            if not custom_app_id.isdigit():
+                self.log("error", "custom-rpc", "Custom Application ID must contain digits only")
+                return False
+            self.client_id_changed.emit(custom_app_id)
+        elif not enabled and self._manual is not None and self._manual.app_id.strip():
+            # Restore configured default Discord Client ID when Custom RPC is released
+            if self.settings.discord_client_id:
+                self.client_id_changed.emit(self.settings.discord_client_id)
+
         was_active = self._manual is not None
-        self._manual = (details, state) if enabled else None
+        self._manual = config if enabled else None
         if was_active != enabled:
-            self.log("info", "manual", "override enabled" if enabled else "override released")
+            self.log(
+                "info",
+                "custom-rpc",
+                f"Custom RPC engaged ({config.details})" if enabled else "Custom RPC disengaged",
+            )
             self.manual_changed.emit(enabled)
+        elif enabled:
+            self.log("info", "custom-rpc", f"Custom RPC updated: {config.details}")
+        self.custom_rpc_changed.emit(enabled, config if enabled else None)
         self._reevaluate()
         return True
+
+    def set_manual(self, enabled: bool, details: str, state: str) -> bool:
+        cfg = CustomRPCConfig(details=details.strip(), state=state.strip())
+        return self.set_custom_rpc(enabled, cfg)
 
     def set_paused(self, paused: bool) -> None:
         if paused == self.paused:

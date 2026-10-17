@@ -352,26 +352,33 @@
           "vivaldi.exe"
         ],
         "title_regex": [
-          "^(?P<page>.+?) · (?P<kind>(?:Pull Request|Issue) #\\d+) · (?P<repo>[\\w.-]+/[\\w.-]+) · GitHub",
-          "^(?P<page>.+?) at (?P<ref>\\S+) · (?P<repo>[\\w.-]+/[\\w.-]+) · GitHub",
-          "^GitHub - (?P<repo>[\\w.-]+/[\\w.-]+)(?:: .*)?",
-          "^(?P<page>[^·]+?) · (?P<repo>[\\w.-]+/[\\w.-]+) · GitHub",
-          "^(?P<repo>[\\w.-]+/[\\w.-]+)(?:: .*?)? · GitHub"
+          "^(?:.*?[·•\\-\\s])?(?P<owner>[a-zA-Z0-9_-]+)/(?P<repo>[a-zA-Z0-9_.-]+)(?::\\s*(?P<desc>.*?))?(?:\\s*[·•\\-\\–\\—]\\s*GitHub.*|\\s*[-–—]\\s*(?:Brave|Google Chrome|Microsoft\\u200b? Edge|Mozilla Firefox|Opera|Vivaldi).*)$",
+          "(?i)^(?:.*?[·•\\-\\s])?(?P<section>Your\\s+(?:Repositories|Profile|Stars|Starred|Projects|Packages|Organizations|Enterprises|Sponsors|Gists|Discussions|Codespaces))(?:\\s*[·•\\-\\–\\—]\\s*GitHub\\b.*|\\s*[-–—]\\s*(?:Brave|Google Chrome|Microsoft\\u200b? Edge|Mozilla Firefox|Opera|Vivaldi).*|\\s*)$",
+          "^.*?/\\s*(?P<section>Repositories|Starred|Stars|Projects|Packages)\\s*[·•\\-\\–\\—]\\s*GitHub.*$",
+          "^(?:.*?[·•\\-\\s])?(?P<section>Pull requests|Issues|Notifications|Explore(?:\\s+GitHub)?|Marketplace|Trending(?:\\s+repositories(?:\\s+on\\s+GitHub(?:\\s+today)?)?)?|Discussions)\\s*[·•\\-\\–\\—]\\s*GitHub.*$",
+          "^(?!(?:\\(\\d+\\)\\s*)?(?:Your\\s+[a-zA-Z]+|Pull requests|Issues|Notifications|Explore|Marketplace|Trending|Discussions|Sign in|GitHub\\b))(?:.*?[·•\\-\\s])?(?:(?P<display_name>[^()·•\\-/]+?)\\s*\\((?P<owner>[a-zA-Z0-9_-]+)\\)|(?P<owner_alt>[a-zA-Z0-9_-]+)\\s*\\((?P<full_name>[^()]+)\\)|^(?:\\(\\d+\\)\\s*)?(?P<owner_only>[a-zA-Z0-9_-]+))\\s*[·•\\-\\–\\—]\\s*GitHub.*$",
+          "^.*?\\bGitHub\\b.*$"
         ]
       },
-      "sticky_seconds": 60,
-      "session_key": "{repo}",
+      "sticky_seconds": 90,
+      "session_key": "{owner|github}:{repo|profile}:{section|home}",
       "presence": {
         "details": [
-          "{kind} in {repo}",
-          "Browsing {repo}"
+          "{details}",
+          "{repo}",
+          "Browsing {section|GitHub}"
         ],
         "state": [
-          "[[{page}]]",
-          "On GitHub"
+          "{state}",
+          "by @{owner}",
+          "Working on GitHub"
         ],
-        "large_image": "github",
-        "large_text": "{repo}",
+        "large_image": "{github_avatar|github}",
+        "large_text": [
+          "{owner}/{repo}",
+          "@{owner} on GitHub",
+          "{section|GitHub}"
+        ],
         "small_image": "browser",
         "small_text": "{app_label}",
         "timestamp": "session",
@@ -380,7 +387,7 @@
       "buttons": [
         {
           "label": "Open on GitHub",
-          "url": "https://github.com/{repo}"
+          "url": "{github_url}"
         }
       ]
     },

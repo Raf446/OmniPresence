@@ -118,16 +118,20 @@ class IPCManager(QThread):
 
     @staticmethod
     def _is_priority_transition(prev: PresenceData | None, curr: PresenceData | None) -> bool:
-        """Return True when switching rules/tiers, changing track/details, or upgrading placeholder to album cover."""
+        """Return True when switching rules/tiers, changing track/details/buttons, or upgrading placeholder to artwork."""
         if (prev is None) != (curr is None):
             return True
         if prev is None or curr is None:
             return False
         return (
-            curr.tier != prev.tier
+            curr.tier == 1
+            or curr.tier != prev.tier
             or curr.rule_id != prev.rule_id
             or curr.details != prev.details
+            or curr.state != prev.state
             or curr.large_image != prev.large_image
+            or curr.small_image != prev.small_image
+            or curr.buttons != prev.buttons
         )
 
     @staticmethod
@@ -308,11 +312,14 @@ class IPCManager(QThread):
                     fallback = replace(fallback, buttons=())
                 elif fallback.large_image and fallback.large_image.lower().startswith(("http://", "https://")):
                     self.message.emit("warn", f"Discord rejected external artwork URL ({exc}), using fallback icon")
-                    fallback_icon = (
-                        "youtube"
-                        if "youtube" in fallback.rule_id
-                        else ("spotify" if "spotify" in fallback.rule_id else "music_placeholder")
-                    )
+                    if "youtube" in fallback.rule_id:
+                        fallback_icon = "youtube"
+                    elif "github" in fallback.rule_id:
+                        fallback_icon = "github"
+                    elif "spotify" in fallback.rule_id:
+                        fallback_icon = "spotify"
+                    else:
+                        fallback_icon = "music_placeholder"
                     fallback = replace(fallback, large_image=fallback_icon)
                 if fallback != presence:
                     try:

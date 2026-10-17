@@ -451,3 +451,72 @@ QToolTip {
     border-radius: 5px;
     padding: 5px 8px;
 }
+
+/* --- Main Workspace Tabs & Custom RPC Studio Controls --- */
+
+QTabWidget#MainTabs::pane {
+    border: none;
+    background: transparent;
+    margin-top: 4px;
+}
+
+QTabBar::tab {
+    background-color: #141820;
+    color: #94a0b8;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 7px;
+    padding: 6px 14px;
+    margin-right: 6px;
+    font-weight: 600;
+}
+
+QTabBar::tab:hover {
+    background-color: #1b212c;
+    color: #eef2f8;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+QTabBar::tab:selected {
+    background: qlineargradient(
+        x1: 0, y1: 0, x2: 0, y2: 1,
+        stop: 0 rgba(41, 121, 255, 0.28),
+        stop: 1 rgba(41, 121, 255, 0.14)
+    );
+    color: #f4f7fc;
+    border: 1px solid rgba(41, 121, 255, 0.55);
+}
+
+QComboBox,
+QSpinBox {
+    background-color: #0c0e12;
+    color: #eef2f8;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 7px;
+    padding: 4px 10px;
+    min-height: 24px;
+}
+
+QComboBox:hover,
+QSpinBox:hover {
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background-color: #0f1218;
+}
+
+QComboBox:focus,
+QSpinBox:focus {
+    border: 1px solid #2979ff;
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 20px;
+}
+
+QComboBox QAbstractItemView {
+    background-color: #141820;
+    color: #eef2f8;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    selection-background-color: rgba(41, 121, 255, 0.28);
+    selection-color: #ffffff;
+}
+

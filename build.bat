@@ -7,7 +7,7 @@ cd /d "%~dp0"
 echo ====================================================================
 echo    OmniPresence Standalone .EXE Builder
 echo    App Name  : OmniPresence
-echo    Version   : 2.0.0
+echo    Version   : 2.1.1
 echo    Publisher : Raf446
 echo ====================================================================
 echo.

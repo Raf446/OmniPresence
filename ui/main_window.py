@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QPlainTextEdit,
     QPushButton,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -28,7 +29,7 @@ from PySide6.QtWidgets import (
 from core.state_manager import LogEntry, StateManager
 from extractors.telemetry import TelemetrySample
 from ui import ACCENT, DANGER, STATUS_COLORS, SUCCESS, WARN, app_icon, mono_font, ui_font
-from ui.components import DiscordPreview, QuickControls, RuleListWidget
+from ui.components import CustomRPCPanel, DiscordPreview, QuickControls, RuleListWidget
 
 
 class StatusDot(QWidget):
@@ -163,7 +164,7 @@ class CustomTitleBar(QFrame):
         brand.setFont(ui_font(13, QFont.Weight.Bold))
         layout.addWidget(brand)
 
-        ver = QLabel("v2.0.0", objectName="TitleVersionBadge")
+        ver = QLabel("v2.1.1", objectName="TitleVersionBadge")
         ver.setFont(mono_font(10, QFont.Weight.DemiBold))
         layout.addWidget(ver)
 
@@ -355,10 +356,21 @@ class MainWindow(QMainWindow):
         self._controls.client_id_submitted.connect(state.set_client_id)
         right_col.addWidget(self._controls)
 
-        self._rules = RuleListWidget(state.rulebook, body)
+        self._tabs = QTabWidget(body)
+        self._tabs.setObjectName("MainTabs")
+        self._tabs.setFont(ui_font(11, QFont.Weight.DemiBold))
+
+        self._rules = RuleListWidget(state.rulebook, self._tabs)
         self._rules.set_rulebook(state.rulebook, state.rule_error)
         self._rules.rule_toggled.connect(state.set_rule_enabled)
-        right_col.addWidget(self._rules, 1)
+        self._tabs.addTab(self._rules, "Context Detection Rules (P2\u2013P6)")
+
+        presets_path = state._rules_path.parent / "custom_presets.json"
+        self._custom_rpc = CustomRPCPanel(presets_path, state.settings.discord_client_id, self._tabs)
+        self._custom_rpc.custom_rpc_submitted.connect(state.set_custom_rpc)
+        self._tabs.addTab(self._custom_rpc, "Custom RPC Studio (P1)")
+
+        right_col.addWidget(self._tabs, 1)
 
         self._logs = ActivityLogPanel(state.settings.log_capacity, body)
         for existing in state.log_history:
@@ -377,6 +389,7 @@ class MainWindow(QMainWindow):
         state.rules_changed.connect(self._rules.set_rulebook)
         state.paused_changed.connect(self._on_paused_changed)
         state.manual_changed.connect(self._controls.set_manual_state)
+        state.custom_rpc_changed.connect(self._custom_rpc.set_custom_rpc_state)
         state.client_id_changed.connect(self._controls.set_client_id_text)
         state.profile_changed.connect(self._preview.set_profile)
 

@@ -79,7 +79,11 @@ class ImageCache:
             return None
         self._pending[url] = [callback]
         req = QNetworkRequest(QUrl(url))
-        req.setRawHeader(b"User-Agent", b"OmniPresence/1.0")
+        req.setRawHeader(b"User-Agent", b"OmniPresence/2.0")
+        req.setAttribute(
+            QNetworkRequest.Attribute.RedirectPolicyAttribute,
+            QNetworkRequest.RedirectPolicy.NoLessSafeRedirectPolicy,
+        )
         reply = self._manager.get(req)
         reply.finished.connect(lambda r=reply, u=url: self._done(r, u))
         return None

@@ -13,7 +13,13 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 from urllib.parse import quote
 
+from extractors.github_resolver import (
+    DEFAULT_GITHUB_USER,
+    GITHUB_AVATAR_RESOLVER,
+    extract_github_owner,
+)
 from extractors.youtube_resolver import YOUTUBE_THUMBNAIL_RESOLVER
+
 
 
 
@@ -128,6 +134,90 @@ def _discord_text(value: str | None) -> str | None:
     return value if len(value) <= DISCORD_TEXT_LIMIT else value[: DISCORD_TEXT_LIMIT - 1] + "\u2026"
 
 
+def sanitize_buttons(pairs: Sequence[tuple[str, str]]) -> tuple[tuple[str, str], ...]:
+    """Validate and sanitize Discord Rich Presence buttons (max 2, non-empty label, strict https:// URL)."""
+    valid: list[tuple[str, str]] = []
+    for raw_label, raw_url in pairs:
+        label = (raw_label or "").strip()[:DISCORD_LABEL_LIMIT]
+        url = (raw_url or "").strip()
+        if not label or not url:
+            continue
+        if not url.lower().startswith("https://") or len(url) <= len("https://a.b") or " " in url:
+            continue
+        if len(url) > DISCORD_URL_LIMIT:
+            continue
+        valid.append((label, url))
+        if len(valid) >= 2:
+            break
+    return tuple(valid)
+
+
+@dataclass(frozen=True)
+class CustomRPCConfig:
+    """Full PreMiD-style Custom Rich Presence configuration bound to P1 Manual Override."""
+
+    details: str = ""
+    state: str = ""
+    large_image: str = ""
+    large_text: str = ""
+    small_image: str = ""
+    small_text: str = ""
+    button1_label: str = ""
+    button1_url: str = ""
+    button2_label: str = ""
+    button2_url: str = ""
+    timestamp_mode: str = "elapsed"  # "none", "elapsed", or "custom"
+    duration_minutes: int = 60
+    activity_type: str = "playing"
+    app_id: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "details": self.details,
+            "state": self.state,
+            "large_image": self.large_image,
+            "large_text": self.large_text,
+            "small_image": self.small_image,
+            "small_text": self.small_text,
+            "button1_label": self.button1_label,
+            "button1_url": self.button1_url,
+            "button2_label": self.button2_label,
+            "button2_url": self.button2_url,
+            "timestamp_mode": self.timestamp_mode,
+            "duration_minutes": int(self.duration_minutes),
+            "activity_type": self.activity_type,
+            "app_id": self.app_id,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "CustomRPCConfig":
+        ts_mode = str(data.get("timestamp_mode", "elapsed")).strip().lower()
+        if ts_mode not in ("none", "elapsed", "custom"):
+            ts_mode = "elapsed"
+        act_type = str(data.get("activity_type", "playing")).strip().lower()
+        if act_type not in ACTIVITY_TYPES:
+            act_type = "playing"
+        try:
+            dur = max(1, min(int(data.get("duration_minutes", 60)), 1440))
+        except (TypeError, ValueError):
+            dur = 60
+        return cls(
+            details=str(data.get("details", "")).strip(),
+            state=str(data.get("state", "")).strip(),
+            large_image=str(data.get("large_image", "")).strip(),
+            large_text=str(data.get("large_text", "")).strip(),
+            small_image=str(data.get("small_image", "")).strip(),
+            small_text=str(data.get("small_text", "")).strip(),
+            button1_label=str(data.get("button1_label", "")).strip(),
+            button1_url=str(data.get("button1_url", "")).strip(),
+            button2_label=str(data.get("button2_label", "")).strip(),
+            button2_url=str(data.get("button2_url", "")).strip(),
+            timestamp_mode=ts_mode,
+            duration_minutes=dur,
+            activity_type=act_type,
+            app_id=str(data.get("app_id", "")).strip(),
+        )
+
 
 @dataclass(frozen=True)
 class WindowFacts:
@@ -177,9 +267,11 @@ class PresenceData:
             "end": self.end,
         }
         kwargs = {key: value for key, value in fields.items() if value is not None}
-        if self.buttons:
-            kwargs["buttons"] = [{"label": label, "url": url} for label, url in self.buttons]
+        clean_btns = sanitize_buttons(self.buttons)
+        if clean_btns:
+            kwargs["buttons"] = [{"label": label, "url": url} for label, url in clean_btns]
         return kwargs
+
 
 
 @dataclass(frozen=True)
@@ -483,6 +575,42 @@ class RuleBook:
                 groups["youtube_thumbnail"] = YOUTUBE_THUMBNAIL_RESOLVER.resolve(
                     groups["video"], background=True
                 )
+            elif rule.id == "browser-github":
+                display_name = groups.get("display_name", "").strip()
+                raw_owner = (
+                    f"{display_name} ({groups['owner']})"
+                    if (display_name and groups.get("owner"))
+                    else (
+                        groups.get("owner")
+                        or groups.get("owner_only")
+                        or groups.get("owner_alt")
+                        or ""
+                    )
+                ).strip()
+                owner = extract_github_owner(raw_owner) if raw_owner else ""
+                repo = groups.get("repo", "").strip()
+                section = groups.get("section", "").strip()
+                if owner and repo:
+                    groups["owner"] = owner
+                    groups["details"] = repo
+                    groups["state"] = f"by @{owner}"
+                    groups["github_avatar"] = GITHUB_AVATAR_RESOLVER.resolve(owner, background=True)
+                    groups["github_url"] = f"https://github.com/{owner}/{repo}"
+                elif owner and not section:
+                    groups["owner"] = owner
+                    groups["details"] = "Viewing Profile"
+                    groups["state"] = f"@{owner}"
+                    groups["github_avatar"] = GITHUB_AVATAR_RESOLVER.resolve(owner, background=True)
+                    groups["github_url"] = f"https://github.com/{owner}"
+                else:
+                    groups.pop("owner", None)
+                    groups["details"] = f"Browsing {section or 'GitHub'}"
+                    groups["state"] = "Working on GitHub"
+                    groups["github_avatar"] = (
+                        GITHUB_AVATAR_RESOLVER.resolve(DEFAULT_GITHUB_USER, background=True)
+                        or f"https://github.com/{DEFAULT_GITHUB_USER}.png?size=512"
+                    )
+                    groups["github_url"] = "https://github.com"
             hits.append((rule, groups))
         return hits
 
@@ -500,7 +628,7 @@ class EngineInput:
     now: float
     activities: Sequence[Activity]
     media: Any
-    manual: tuple[str, str] | None
+    manual: CustomRPCConfig | tuple[str, str] | None
     paused: bool
     idle_seconds: float
     shared_variables: Mapping[str, str]
@@ -579,7 +707,7 @@ class PriorityEngine:
             key=lambda pair: (0 if pair[1].foreground else 1, pair[0].tier, book.order_of(pair[0].id)),
         )
         self._touch_sessions(candidates, inp.now)
-        presence = self._render(rule, activity, shared, inp.now)
+        presence = self._render(rule, activity, shared, inp.now, inp.manual)
 
         outranked = len(candidates) - 1
         reason = f"P{int(rule.tier)} {rule.tier.label} via '{rule.id}'"
@@ -588,6 +716,15 @@ class PriorityEngine:
         if inp.paused:
             return Resolution(presence, rule.tier, rule, activity, live_tiers, live_rules, False, "paused: " + reason)
         return Resolution(presence, rule.tier, rule, activity, live_tiers, live_rules, True, reason)
+
+    @staticmethod
+    def _coerce_manual(manual: CustomRPCConfig | tuple[str, str] | None) -> CustomRPCConfig | None:
+        if manual is None:
+            return None
+        if isinstance(manual, CustomRPCConfig):
+            return manual
+        details, state = manual
+        return CustomRPCConfig(details=details, state=state)
 
     def _collect(
         self, inp: EngineInput, book: RuleBook, shared: Mapping[str, str]
@@ -633,11 +770,16 @@ class PriorityEngine:
                     (rule, Activity(rule.id, key or media.title, variables, media.start_at, media.end_at))
                 )
 
-        if inp.manual is not None:
-            details, state = inp.manual
+        manual_cfg = self._coerce_manual(inp.manual)
+        if manual_cfg is not None:
             for rule in book.of_kind("manual"):
-                variables = {**shared, "manual_details": details, "manual_state": state}
-                found.append((rule, Activity(rule.id, rule.id, variables)))
+                variables = {
+                    **shared,
+                    "manual_details": manual_cfg.details,
+                    "manual_state": manual_cfg.state,
+                }
+                session_key = f"{rule.id}:{manual_cfg.timestamp_mode}:{manual_cfg.duration_minutes}"
+                found.append((rule, Activity(rule.id, session_key, variables)))
                 break
         return found
 
@@ -664,9 +806,63 @@ class PriorityEngine:
             return int(activity.started_at), end
         return (int(session) if session else None), None
 
-    def _render(
-        self, rule: Rule, activity: Activity, shared: Mapping[str, str], now: float
+    def _render_custom_manual(
+        self, rule: Rule, activity: Activity, cfg: CustomRPCConfig, now: float
     ) -> PresenceData:
+        session = self._session_start.get(f"{rule.id}:{activity.key}", now)
+        if cfg.timestamp_mode == "none":
+            start, end = None, None
+        elif cfg.timestamp_mode == "custom":
+            start = int(session)
+            end = int(session + max(1, int(cfg.duration_minutes)) * 60)
+        else:
+            start, end = int(session), None
+
+        buttons: tuple[tuple[str, str], ...] = ()
+        if self.show_buttons:
+            buttons = sanitize_buttons(
+                (
+                    (cfg.button1_label, cfg.button1_url),
+                    (cfg.button2_label, cfg.button2_url),
+                )
+            )
+
+        large_image = cfg.large_image.strip() or "manual"
+        large_text = _discord_text(cfg.large_text.strip() or cfg.details.strip() or "Custom Rich Presence")
+        small_image = cfg.small_image.strip() or ("manual" if not cfg.large_image.strip() else None)
+        small_text = _discord_text(
+            cfg.small_text.strip() or ("Set from OmniPresence" if small_image == "manual" else None)
+        )
+        act_code = ACTIVITY_TYPES.get(cfg.activity_type.lower(), rule.presence.activity_type)
+
+        return PresenceData(
+            details=_discord_text(cfg.details.strip() or "Custom Rich Presence"),
+            state=_discord_text(cfg.state.strip()) if cfg.state.strip() else None,
+            large_image=large_image,
+            large_text=large_text,
+            small_image=small_image,
+            small_text=small_text,
+            start=start,
+            end=end,
+            buttons=buttons,
+            activity_type=act_code,
+            tier=int(rule.tier),
+            rule_id=rule.id,
+        )
+
+    def _render(
+        self,
+        rule: Rule,
+        activity: Activity,
+        shared: Mapping[str, str],
+        now: float,
+        manual: CustomRPCConfig | tuple[str, str] | None = None,
+    ) -> PresenceData:
+        if rule.kind == "manual":
+            manual_cfg = self._coerce_manual(manual)
+            if manual_cfg is not None:
+                return self._render_custom_manual(rule, activity, manual_cfg, now)
+
         variables = {**shared, **activity.variables}
         if rule.id == "browser-youtube":
             video_title = variables.get("video", "").strip()
@@ -676,6 +872,46 @@ class PriorityEngine:
                 )
             else:
                 variables.setdefault("youtube_thumbnail", "youtube")
+        elif rule.id == "browser-github":
+            display_name = variables.get("display_name", "").strip()
+            raw_owner = (
+                f"{display_name} ({variables['owner']})"
+                if (display_name and variables.get("owner"))
+                else (
+                    variables.get("owner")
+                    or variables.get("owner_only")
+                    or variables.get("owner_alt")
+                    or ""
+                )
+            ).strip()
+            owner = extract_github_owner(raw_owner) if raw_owner else ""
+            repo = variables.get("repo", "").strip()
+            section = variables.get("section", "").strip()
+            if owner and repo:
+                variables["owner"] = owner
+                variables["details"] = repo
+                variables["state"] = f"by @{owner}"
+                variables["github_avatar"] = GITHUB_AVATAR_RESOLVER.resolve(
+                    owner, background=True
+                )
+                variables["github_url"] = f"https://github.com/{owner}/{repo}"
+            elif owner and not section:
+                variables["owner"] = owner
+                variables["details"] = "Viewing Profile"
+                variables["state"] = f"@{owner}"
+                variables["github_avatar"] = GITHUB_AVATAR_RESOLVER.resolve(
+                    owner, background=True
+                )
+                variables["github_url"] = f"https://github.com/{owner}"
+            else:
+                variables.pop("owner", None)
+                variables["details"] = f"Browsing {section or 'GitHub'}"
+                variables["state"] = "Working on GitHub"
+                variables["github_avatar"] = (
+                    GITHUB_AVATAR_RESOLVER.resolve(DEFAULT_GITHUB_USER, background=True)
+                    or f"https://github.com/{DEFAULT_GITHUB_USER}.png?size=512"
+                )
+                variables["github_url"] = "https://github.com"
 
         spec = rule.presence
         start, end = self._timestamps(rule, activity)
@@ -685,12 +921,11 @@ class PriorityEngine:
             for button in rule.buttons:
                 url = render(button.url, variables)
                 label = render(button.label, variables)
-                if not url or not label or not url.lower().startswith(("http://", "https://")):
+                if not url or not label:
                     continue
-                if len(url) > DISCORD_URL_LIMIT:
-                    continue
-                buttons.append((label[:DISCORD_LABEL_LIMIT], url))
+                buttons.append((label, url))
 
+        clean_buttons = sanitize_buttons(buttons)
         large_image = render_first(spec.large_image, variables)
         large_text = render_first(spec.large_text, variables)
 
@@ -703,6 +938,12 @@ class PriorityEngine:
             if not large_text:
                 app_label = variables.get("app_label", "").strip()
                 large_text = f"YouTube on {app_label}" if app_label else "YouTube"
+        elif rule.id == "browser-github":
+            gh_avatar = variables.get("github_avatar", "").strip()
+            if gh_avatar.lower().startswith("https://") and len(gh_avatar) <= 256:
+                large_image = gh_avatar
+            elif not large_image:
+                large_image = "github"
 
         if rule.kind == "media":
             dynamic_art = variables.get("artwork_url", "").strip()
@@ -728,7 +969,7 @@ class PriorityEngine:
             small_text=_discord_text(render_first(spec.small_text, variables)),
             start=start,
             end=end,
-            buttons=tuple(buttons),
+            buttons=clean_buttons,
             activity_type=spec.activity_type,
             tier=int(rule.tier),
             rule_id=rule.id,

@@ -1,0 +1,34 @@
+{
+  "presets": {
+    "GitHub Portfolio Showcase": {
+      "app_id": "",
+      "details": "Building OmniPresence v2.0",
+      "state": "Autonomous Multi-Context Discord RPC",
+      "large_image": "https://github.com/Raf446.png?size=512",
+      "large_text": "Raf446 on GitHub",
+      "small_image": "python",
+      "small_text": "Python 3.11 + PySide6",
+      "button1_label": "View Repository",
+      "button1_url": "https://github.com/Raf446/OmniPresence",
+      "button2_label": "GitHub Profile",
+      "button2_url": "https://github.com/Raf446",
+      "timestamp_mode": "elapsed",
+      "duration_minutes": 60
+    },
+    "Deep Work / Do Not Disturb": {
+      "app_id": "",
+      "details": "In Deep Focus Session",
+      "state": "Notifications Muted",
+      "large_image": "op_manual",
+      "large_text": "OmniPresence Custom Override",
+      "small_image": "op_badge",
+      "small_text": "Priority Tier P1",
+      "button1_label": "",
+      "button1_url": "",
+      "button2_label": "",
+      "button2_url": "",
+      "timestamp_mode": "custom",
+      "duration_minutes": 90
+    }
+  }
+}
