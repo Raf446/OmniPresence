@@ -289,10 +289,31 @@ class ArtworkTile(QWidget):
             return pixmap if pixmap is not None and not pixmap.isNull() else None
         return None
 
-    @staticmethod
-    def _glyph(key: str, length: int) -> str:
+    _ASSET_GLYPHS = {
+        "celestial_night": "\U0001f319",
+        "celestial_day": "\u2600",
+        "celestial_dawn": "\U0001f305",
+        "celestial_golden": "\U0001f307",
+        "celestial_dusk": "\U0001f306",
+        "weather_rain": "\U0001f327",
+        "weather_storm": "\u26c8",
+        "ram_chip": "RM",
+        "cpu_chip": "CP",
+        "shield": "\U0001f6e1",
+        "lock": "\U0001f512",
+        "mood_neon": "\u26a1",
+        "mood_cyber": "\U0001f30c",
+        "mood_lofi": "\u2615",
+        "mood_mono": "\U0001f5a4",
+    }
+
+    @classmethod
+    def _glyph(cls, key: str, length: int) -> str:
         if key.lower().startswith(("http://", "https://")):
             return ""
+        mapped = cls._ASSET_GLYPHS.get(key.lower())
+        if mapped:
+            return mapped[:length]
         return (key[:length] or "OP").upper()
 
     def paintEvent(self, _event) -> None:  # noqa: N802

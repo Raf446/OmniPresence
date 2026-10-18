@@ -1,0 +1,98 @@
+{
+  "date": "2026-10-18",
+  "totals": {
+    "Coding": 2.45,
+    "Media": 0.0,
+    "Gaming": 0.0,
+    "Browsing": 0.0,
+    "Idle": 614.79
+  },
+  "sessions": [
+    {
+      "category": "Idle",
+      "headline": "CPU: 13% • RAM: 7.0 / 14 GB • 24°C • Partly Cloudy",
+      "rule_id": "idle-standby",
+      "started_at": 1792284812.07,
+      "updated_at": 1792285101.81,
+      "duration_seconds": 290.74
+    },
+    {
+      "category": "Coding",
+      "headline": "Away from Desk • Stealth Mode Active • Session Locked • Privacy Shield Engaged",
+      "rule_id": "manual-override",
+      "started_at": 1792284809.17,
+      "updated_at": 1792284811.34,
+      "duration_seconds": 3.17
+    },
+    {
+      "category": "Idle",
+      "headline": "CPU: 11% • RAM: 7.6 / 14 GB • 24°C • Partly Cloudy",
+      "rule_id": "idle-standby",
+      "started_at": 1792284385.56,
+      "updated_at": 1792284808.88,
+      "duration_seconds": 324.32
+    }
+  ],
+  "days": {
+    "2026-10-17": {
+      "totals": {
+        "Coding": 0.0,
+        "Media": 0.0,
+        "Gaming": 0.0,
+        "Browsing": 0.0,
+        "Idle": 28.66
+      },
+      "total_active_seconds": 0.0,
+      "total_tracked_seconds": 28.66,
+      "sessions": [
+        {
+          "category": "Idle",
+          "headline": "CPU: 8% • RAM: 7.0 / 14 GB • 27°C • Mostly Clear Night",
+          "rule_id": "idle-standby",
+          "started_at": 1792253374.91,
+          "updated_at": 1792253403.27,
+          "duration_seconds": 29.38
+        }
+      ],
+      "updated_at": "2026-10-17T23:10:03"
+    },
+    "2026-10-18": {
+      "totals": {
+        "Coding": 2.45,
+        "Media": 0.0,
+        "Gaming": 0.0,
+        "Browsing": 0.0,
+        "Idle": 614.79
+      },
+      "total_active_seconds": 2.45,
+      "total_tracked_seconds": 617.24,
+      "sessions": [
+        {
+          "category": "Idle",
+          "headline": "CPU: 13% • RAM: 7.0 / 14 GB • 24°C • Partly Cloudy",
+          "rule_id": "idle-standby",
+          "started_at": 1792284812.07,
+          "updated_at": 1792285101.81,
+          "duration_seconds": 290.74
+        },
+        {
+          "category": "Coding",
+          "headline": "Away from Desk • Stealth Mode Active • Session Locked • Privacy Shield Engaged",
+          "rule_id": "manual-override",
+          "started_at": 1792284809.17,
+          "updated_at": 1792284811.34,
+          "duration_seconds": 3.17
+        },
+        {
+          "category": "Idle",
+          "headline": "CPU: 11% • RAM: 7.6 / 14 GB • 24°C • Partly Cloudy",
+          "rule_id": "idle-standby",
+          "started_at": 1792284385.56,
+          "updated_at": 1792284808.88,
+          "duration_seconds": 324.32
+        }
+      ],
+      "updated_at": "2026-10-18T07:58:21"
+    }
+  }
+}

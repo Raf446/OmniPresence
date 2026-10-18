@@ -14,5 +14,23 @@
     "applemusic"
   ],
   "build_linger_seconds": 4.0,
-  "log_capacity": 500
+  "log_capacity": 500,
+  "privacy_shield_enabled": true,
+  "privacy_lock_hook": true,
+  "privacy_inactivity_minutes": 10,
+  "privacy_stealth_details": "Away from Desk • Stealth Mode Active",
+  "privacy_stealth_state": "Session Locked • Privacy Shield Engaged",
+  "mood_engine_enabled": true,
+  "mood_apply_to_small_badge": true,
+  "celestial_sync_enabled": true,
+  "celestial_weather_enabled": true,
+  "location_mode": "gps",
+  "manual_location_name": "",
+  "manual_lat": -6.2088,
+  "manual_lon": 106.8456,
+  "celestial_latitude": -6.2088,
+  "celestial_longitude": 106.8456,
+  "celestial_append_to_state": true,
+  "privacy_show_city": false,
+  "idle_custom_image": ""
 }

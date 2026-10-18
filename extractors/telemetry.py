@@ -17,7 +17,13 @@ class TelemetrySample:
     published_ram: int
 
     def as_variables(self) -> dict[str, str]:
-        return {"cpu": str(self.published_cpu), "ram": str(self.published_ram)}
+        return {
+            "cpu": str(self.published_cpu),
+            "ram": str(self.published_ram),
+            "cpu_percent": str(self.published_cpu),
+            "ram_used_gb": f"{self.ram_used_gb:.1f}",
+            "ram_total_gb": f"{self.ram_total_gb:.0f}",
+        }
 
 
 class TelemetrySampler:

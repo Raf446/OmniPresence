@@ -255,9 +255,9 @@
           "vscodium.exe"
         ],
         "title_regex": [
-          "^(?:[●•*]\\s*)?(?P<file>[^\\\\/]+?\\.[\\w+#-]{1,12}) - (?P<project>.+?) - (?:Visual Studio Code|VSCodium)(?: - Insiders)?(?: \\[.*\\])?\\s*$",
-          "^(?:[●•*]\\s*)?(?P<file>[^\\\\/]+?\\.[\\w+#-]{1,12}) - (?:Visual Studio Code|VSCodium)(?: - Insiders)?(?: \\[.*\\])?\\s*$",
-          "^(?:[●•*]\\s*)?(?P<file>.+?) - (?P<project>.+?) - (?:Visual Studio Code|VSCodium)(?: - Insiders)?(?: \\[.*\\])?\\s*$",
+          "^(?:[â—â€¢*]\\s*)?(?P<file>[^\\\\/]+?\\.[\\w+#-]{1,12}) - (?P<project>.+?) - (?:Visual Studio Code|VSCodium)(?: - Insiders)?(?: \\[.*\\])?\\s*$",
+          "^(?:[â—â€¢*]\\s*)?(?P<file>[^\\\\/]+?\\.[\\w+#-]{1,12}) - (?:Visual Studio Code|VSCodium)(?: - Insiders)?(?: \\[.*\\])?\\s*$",
+          "^(?:[â—â€¢*]\\s*)?(?P<file>.+?) - (?P<project>.+?) - (?:Visual Studio Code|VSCodium)(?: - Insiders)?(?: \\[.*\\])?\\s*$",
           "^(?P<project>.+?) - (?:Visual Studio Code|VSCodium)(?: - Insiders)?(?: \\[.*\\])?\\s*$"
         ]
       },
@@ -352,11 +352,11 @@
           "vivaldi.exe"
         ],
         "title_regex": [
-          "^(?:.*?[·•\\-\\s])?(?P<owner>[a-zA-Z0-9_-]+)/(?P<repo>[a-zA-Z0-9_.-]+)(?::\\s*(?P<desc>.*?))?(?:\\s*[·•\\-\\–\\—]\\s*GitHub.*|\\s*[-–—]\\s*(?:Brave|Google Chrome|Microsoft\\u200b? Edge|Mozilla Firefox|Opera|Vivaldi).*)$",
-          "(?i)^(?:.*?[·•\\-\\s])?(?P<section>Your\\s+(?:Repositories|Profile|Stars|Starred|Projects|Packages|Organizations|Enterprises|Sponsors|Gists|Discussions|Codespaces))(?:\\s*[·•\\-\\–\\—]\\s*GitHub\\b.*|\\s*[-–—]\\s*(?:Brave|Google Chrome|Microsoft\\u200b? Edge|Mozilla Firefox|Opera|Vivaldi).*|\\s*)$",
-          "^.*?/\\s*(?P<section>Repositories|Starred|Stars|Projects|Packages)\\s*[·•\\-\\–\\—]\\s*GitHub.*$",
-          "^(?:.*?[·•\\-\\s])?(?P<section>Pull requests|Issues|Notifications|Explore(?:\\s+GitHub)?|Marketplace|Trending(?:\\s+repositories(?:\\s+on\\s+GitHub(?:\\s+today)?)?)?|Discussions)\\s*[·•\\-\\–\\—]\\s*GitHub.*$",
-          "^(?!(?:\\(\\d+\\)\\s*)?(?:Your\\s+[a-zA-Z]+|Pull requests|Issues|Notifications|Explore|Marketplace|Trending|Discussions|Sign in|GitHub\\b))(?:.*?[·•\\-\\s])?(?:(?P<display_name>[^()·•\\-/]+?)\\s*\\((?P<owner>[a-zA-Z0-9_-]+)\\)|(?P<owner_alt>[a-zA-Z0-9_-]+)\\s*\\((?P<full_name>[^()]+)\\)|^(?:\\(\\d+\\)\\s*)?(?P<owner_only>[a-zA-Z0-9_-]+))\\s*[·•\\-\\–\\—]\\s*GitHub.*$",
+          "^(?:.*?[Â·â€¢\\-\\s])?(?P<owner>[a-zA-Z0-9_-]+)/(?P<repo>[a-zA-Z0-9_.-]+)(?::\\s*(?P<desc>.*?))?(?:\\s*[Â·â€¢\\-\\â€“\\â€”]\\s*GitHub.*|\\s*[-â€“â€”]\\s*(?:Brave|Google Chrome|Microsoft\\u200b? Edge|Mozilla Firefox|Opera|Vivaldi).*)$",
+          "(?i)^(?:.*?[Â·â€¢\\-\\s])?(?P<section>Your\\s+(?:Repositories|Profile|Stars|Starred|Projects|Packages|Organizations|Enterprises|Sponsors|Gists|Discussions|Codespaces))(?:\\s*[Â·â€¢\\-\\â€“\\â€”]\\s*GitHub\\b.*|\\s*[-â€“â€”]\\s*(?:Brave|Google Chrome|Microsoft\\u200b? Edge|Mozilla Firefox|Opera|Vivaldi).*|\\s*)$",
+          "^.*?/\\s*(?P<section>Repositories|Starred|Stars|Projects|Packages)\\s*[Â·â€¢\\-\\â€“\\â€”]\\s*GitHub.*$",
+          "^(?:.*?[Â·â€¢\\-\\s])?(?P<section>Pull requests|Issues|Notifications|Explore(?:\\s+GitHub)?|Marketplace|Trending(?:\\s+repositories(?:\\s+on\\s+GitHub(?:\\s+today)?)?)?|Discussions)\\s*[Â·â€¢\\-\\â€“\\â€”]\\s*GitHub.*$",
+          "^(?!(?:\\(\\d+\\)\\s*)?(?:Your\\s+[a-zA-Z]+|Pull requests|Issues|Notifications|Explore|Marketplace|Trending|Discussions|Sign in|GitHub\\b))(?:.*?[Â·â€¢\\-\\s])?(?:(?P<display_name>[^()Â·â€¢\\-/]+?)\\s*\\((?P<owner>[a-zA-Z0-9_-]+)\\)|(?P<owner_alt>[a-zA-Z0-9_-]+)\\s*\\((?P<full_name>[^()]+)\\)|^(?:\\(\\d+\\)\\s*)?(?P<owner_only>[a-zA-Z0-9_-]+))\\s*[Â·â€¢\\-\\â€“\\â€”]\\s*GitHub.*$",
           "^.*?\\bGitHub\\b.*$"
         ]
       },
@@ -419,7 +419,7 @@
           "Browsing YouTube"
         ],
         "state": [
-          "Watching on YouTube[[ • {app_label}]]",
+          "Watching on YouTube[[ â€¢ {app_label}]]",
           "Watching on YouTube"
         ],
         "large_image": "{youtube_thumbnail|youtube}",
@@ -558,15 +558,17 @@
       "session_key": "afk",
       "presence": {
         "details": [
+          "CPU: {cpu_percent}% â€¢ RAM: {ram_used_gb} / {ram_total_gb} GB",
           "Away from keyboard"
         ],
         "state": [
+          "{city_name} â€¢ {temp_c}Â°C {weather_desc}",
           "Idle for {idle_for}"
         ],
-        "large_image": "idle",
-        "large_text": "Away from keyboard",
-        "small_image": "idle",
-        "small_text": "No input for {idle_for}",
+        "large_image": "{celestial_icon|idle}",
+        "large_text": "System Idle â€¢ {ambient_vibe|Away from keyboard}",
+        "small_image": "ram_chip",
+        "small_text": "OmniPresence v2.1.1",
         "timestamp": "session",
         "activity_type": "playing"
       }
@@ -582,18 +584,21 @@
       "session_key": "standby",
       "presence": {
         "details": [
+          "CPU: {cpu_percent}% â€¢ RAM: {ram_used_gb} / {ram_total_gb} GB",
           "Standing by"
         ],
         "state": [
+          "{city_name} â€¢ {temp_c}Â°C {weather_desc}",
           "No active context"
         ],
-        "large_image": "idle",
-        "large_text": "Standing by",
-        "small_image": "idle",
-        "small_text": "OmniPresence is running",
+        "large_image": "{celestial_icon|idle}",
+        "large_text": "System Idle â€¢ {ambient_vibe|Standing by}",
+        "small_image": "ram_chip",
+        "small_text": "OmniPresence v2.1.1",
         "timestamp": "none",
         "activity_type": "playing"
       }
     }
   ]
 }
+

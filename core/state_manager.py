@@ -1,16 +1,15 @@
-"""Central reactive state: wires workers, the priority engine and the UI together."""
+"""Central reactive state: wires workers, Privacy Shield, Mood Engine, Celestial Sync, Priority Engine, and UI."""
 from __future__ import annotations
 
-import json
-import os
 import time
 from collections import deque
-from dataclasses import MISSING, dataclass, field, fields
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QObject, Signal, Slot
 
+from core.analytics_manager import ANALYTICS_MANAGER
 from core.priority_engine import (
     CustomRPCConfig,
     EngineInput,
@@ -20,75 +19,14 @@ from core.priority_engine import (
     RuleBook,
     RuleError,
 )
+from core.privacy_shield import PRIVACY_SHIELD, PrivacyShield
+from core.settings_manager import CLIENT_ID_ENV, SETTINGS_MANAGER, Settings
+from extractors.celestial_sync import CELESTIAL_SYNC
 from extractors.github_resolver import GITHUB_AVATAR_RESOLVER
+from extractors.mood_engine import MOOD_ENGINE
 from extractors.youtube_resolver import YOUTUBE_THUMBNAIL_RESOLVER
 
-CLIENT_ID_ENV = "OMNIPRESENCE_CLIENT_ID"
-
-
-def _coerce(value: Any, default: Any) -> Any:
-    if isinstance(default, bool):
-        return bool(value)
-    if isinstance(default, int):
-        return int(value)
-    if isinstance(default, float):
-        return float(value)
-    if isinstance(default, list):
-        return [str(item) for item in value]
-    return str(value)
-
-
-@dataclass
-class Settings:
-    discord_client_id: str = ""
-    discord_app_name: str = "OmniPresence"
-    profile_display_name: str = ""
-    profile_handle: str = ""
-    polling_interval: float = 1.0
-    auto_start: bool = False
-    tray_minimized: bool = True
-    idle_threshold_seconds: int = 300
-    show_idle_presence: bool = True
-    show_buttons: bool = True
-    media_preferred_apps: list[str] = field(default_factory=lambda: ["spotify", "applemusic"])
-    build_linger_seconds: float = 4.0
-    log_capacity: int = 500
-    path: Path | None = field(default=None, repr=False, compare=False)
-
-    @classmethod
-    def load(cls, path: Path) -> "Settings":
-        settings = cls(path=path)
-        try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            raw = {}
-        for item in fields(cls):
-            if item.name == "path" or item.name not in raw:
-                continue
-            default = item.default if item.default is not MISSING else item.default_factory()
-            try:
-                setattr(settings, item.name, _coerce(raw[item.name], default))
-            except (TypeError, ValueError):
-                continue
-        settings.polling_interval = min(max(settings.polling_interval, 0.25), 30.0)
-        settings.idle_threshold_seconds = min(max(settings.idle_threshold_seconds, 30), 86400)
-        settings.log_capacity = min(max(settings.log_capacity, 50), 5000)
-        env_id = os.environ.get(CLIENT_ID_ENV, "").strip()
-        if env_id and not settings.discord_client_id:
-            settings.discord_client_id = env_id
-        return settings
-
-    def save(self) -> None:
-        if self.path is None:
-            return
-        try:
-            data = json.loads(self.path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            data = {}
-        for item in fields(self):
-            if item.name != "path":
-                data[item.name] = getattr(self, item.name)
-        self.path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+__all__ = ["CLIENT_ID_ENV", "LogEntry", "Settings", "StateManager"]
 
 
 @dataclass(frozen=True)
@@ -111,17 +49,40 @@ class StateManager(QObject):
     custom_rpc_changed = Signal(bool, object)
     client_id_changed = Signal(str)
     profile_changed = Signal(str, str)
+    shield_changed = Signal(bool)
+    settings_updated = Signal(object)
+    analytics_changed = Signal(object)
 
     def __init__(
-        self, settings: Settings, rules_path: Path, rulebook: RuleBook, rule_error: str = "", parent=None
+        self,
+        settings: Settings,
+        rules_path: Path,
+        rulebook: RuleBook,
+        rule_error: str = "",
+        privacy_shield: PrivacyShield | None = None,
+        parent=None,
     ) -> None:
         super().__init__(parent)
         self.settings = settings
+        SETTINGS_MANAGER.bind(settings)
         self._rules_path = rules_path
         self.rulebook = rulebook
         self.rule_error = rule_error
+
+        self.privacy_shield = privacy_shield or PRIVACY_SHIELD
+        self._shield_active = False
+
         self.engine = PriorityEngine(
-            rulebook, settings.idle_threshold_seconds, settings.show_idle_presence, settings.show_buttons
+            rulebook,
+            settings.idle_threshold_seconds,
+            settings.show_idle_presence,
+            settings.show_buttons,
+            mood_engine_enabled=settings.mood_engine_enabled,
+            mood_apply_to_small_badge=settings.mood_apply_to_small_badge,
+            celestial_sync_enabled=settings.celestial_sync_enabled,
+            celestial_append_to_state=settings.celestial_append_to_state,
+            privacy_show_city=settings.privacy_show_city,
+            idle_custom_image=settings.idle_custom_image,
         )
         self.log_history: deque[LogEntry] = deque(maxlen=settings.log_capacity)
         self.resolution: Resolution | None = None
@@ -138,12 +99,52 @@ class StateManager(QObject):
         self._last_outgoing: Any = object()
         self._last_trigger: tuple[str, str] | None = None
 
+        self._sync_feature_modules()
+
         YOUTUBE_THUMBNAIL_RESOLVER.signals.resolved.connect(self.on_youtube_thumbnail)
         GITHUB_AVATAR_RESOLVER.signals.resolved.connect(self.on_github_avatar)
+        MOOD_ENGINE.signals.resolved.connect(self.on_mood_resolved)
+        CELESTIAL_SYNC.signals.weather_updated.connect(self.on_celestial_updated)
+        self.privacy_shield.shield_engaged.connect(self.on_shield_engaged)
+        SETTINGS_MANAGER.settings_changed.connect(self._on_settings_manager_changed)
+
+    def _sync_feature_modules(self) -> None:
+        s = self.settings
+        MOOD_ENGINE.set_enabled(s.mood_engine_enabled)
+        active_lat = s.manual_lat if s.location_mode == "manual" and s.manual_location_name else s.celestial_latitude
+        active_lon = s.manual_lon if s.location_mode == "manual" and s.manual_location_name else s.celestial_longitude
+        CELESTIAL_SYNC.configure(
+            enabled=s.celestial_sync_enabled,
+            weather_enabled=s.celestial_weather_enabled,
+            latitude=active_lat,
+            longitude=active_lon,
+            location_mode=s.location_mode,
+            manual_location_name=s.manual_location_name,
+        )
+        self.privacy_shield.configure(
+            enabled=s.privacy_shield_enabled,
+            lock_hook=s.privacy_lock_hook,
+            inactivity_minutes=s.privacy_inactivity_minutes,
+        )
+        self.engine.configure(
+            s.idle_threshold_seconds,
+            s.show_idle_presence,
+            s.show_buttons,
+            mood_engine_enabled=s.mood_engine_enabled,
+            mood_apply_to_small_badge=s.mood_apply_to_small_badge,
+            celestial_sync_enabled=s.celestial_sync_enabled,
+            celestial_append_to_state=s.celestial_append_to_state,
+            privacy_show_city=s.privacy_show_city,
+            idle_custom_image=s.idle_custom_image,
+        )
+
+    @property
+    def shield_active(self) -> bool:
+        return bool(self._shield_active and self.settings.privacy_shield_enabled)
 
     @property
     def profile(self) -> tuple[str, str]:
-        """Return (display_name, handle) prioritizing settings.json overrides, then IPC READY user, then neutral fallback."""
+        """Return (display_name, handle) prioritizing settings.json overrides, then IPC READY user, then fallback."""
         cfg_name = self.settings.profile_display_name.strip()
         cfg_handle = self.settings.profile_handle.strip()
         ipc_name, ipc_handle = self._ipc_profile
@@ -164,10 +165,53 @@ class StateManager(QObject):
         self.log_added.emit(entry)
 
     @Slot(object)
+    def _on_settings_manager_changed(self, updated: Settings) -> None:
+        self.settings = updated
+        self._sync_feature_modules()
+        if not self.settings.privacy_shield_enabled and self._shield_active:
+            self._shield_active = False
+            self.shield_changed.emit(False)
+            self.log("info", "shield", "Privacy Shield disabled via Settings")
+        self.profile_changed.emit(*self.profile)
+        self.settings_updated.emit(self.settings)
+        self._reevaluate()
+
+    def update_settings(self, **changes: Any) -> Settings:
+        """Update one or more settings fields, persist to disk, and immediately apply to live engines."""
+        updated = SETTINGS_MANAGER.update(**changes)
+        return updated
+
+    @Slot(bool)
+    def on_shield_engaged(self, engaged: bool) -> None:
+        effective = bool(engaged and self.settings.privacy_shield_enabled)
+        if effective == self._shield_active:
+            return
+        self._shield_active = effective
+        if effective:
+            self.log("info", "shield", "Privacy Shield engaged (Stealth Mode Active)")
+        else:
+            self.log("info", "shield", "Privacy Shield disengaged, restoring live presence")
+        self.shield_changed.emit(effective)
+        self._reevaluate()
+
+    @Slot(str, object)
+    def on_mood_resolved(self, _url: str, mood) -> None:
+        if self.settings.mood_engine_enabled:
+            self.log("info", "mood", f"palette classified: {mood.mood_name} ({mood.dominant_hex})")
+            self._reevaluate()
+
+    @Slot(object)
+    def on_celestial_updated(self, snapshot) -> None:
+        if self.settings.celestial_sync_enabled:
+            self.log("info", "celestial", f"ambient sync: {snapshot.ambient_vibe}")
+            self._reevaluate()
+
+    @Slot(object)
     def on_scan(self, result) -> None:
         self._activities = result.activities
         self._idle_seconds = result.idle_seconds
         self._shared = result.telemetry.as_variables()
+        self.privacy_shield.check_inactivity(self._idle_seconds)
         self.telemetry_changed.emit(result.telemetry)
         self._reevaluate()
 
@@ -241,7 +285,6 @@ class StateManager(QObject):
                 return False
             self.client_id_changed.emit(custom_app_id)
         elif not enabled and self._manual is not None and self._manual.app_id.strip():
-            # Restore configured default Discord Client ID when Custom RPC is released
             if self.settings.discord_client_id:
                 self.client_id_changed.emit(self.settings.discord_client_id)
 
@@ -298,8 +341,7 @@ class StateManager(QObject):
         if not client_id.isdigit():
             self.log("error", "settings", "Application ID must contain digits only")
             return False
-        self.settings.discord_client_id = client_id
-        self.settings.save()
+        self.update_settings(discord_client_id=client_id)
         self.log("info", "settings", "Application ID saved")
         self.client_id_changed.emit(client_id)
         return True
@@ -311,16 +353,34 @@ class StateManager(QObject):
         self.rules_changed.emit(book, "")
         self._reevaluate()
 
+    def _effective_manual(self) -> CustomRPCConfig | None:
+        if self.shield_active:
+            return CustomRPCConfig(
+                details=self.settings.privacy_stealth_details or "Away from Desk \u2022 Stealth Mode Active",
+                state=self.settings.privacy_stealth_state or "Session Locked \u2022 Privacy Shield Engaged",
+                large_image="shield",
+                large_text="Privacy Shield Engaged",
+                small_image="lock",
+                small_text="Biometric / Session Lock",
+                timestamp_mode="elapsed",
+            )
+        return self._manual
+
     def _reevaluate(self) -> None:
+        shared = dict(self._shared)
+        if self.settings.celestial_sync_enabled:
+            snap = CELESTIAL_SYNC.snapshot()
+            shared.update(snap.as_variables())
+
         resolution = self.engine.resolve(
             EngineInput(
                 now=time.time(),
                 activities=self._activities,
                 media=self._media,
-                manual=self._manual,
+                manual=self._effective_manual(),
                 paused=self.paused,
                 idle_seconds=self._idle_seconds,
-                shared_variables=self._shared,
+                shared_variables=shared,
             )
         )
         self.resolution = resolution
@@ -337,13 +397,17 @@ class StateManager(QObject):
             self.presence_changed.emit(resolution)
 
         trigger = resolution.trigger
-        if trigger != self._last_trigger:
+        trigger_changed = trigger != self._last_trigger
+        if trigger_changed:
             self._last_trigger = trigger
             if resolution.rule is not None and resolution.presence is not None:
                 headline = resolution.presence.details or resolution.rule.name
                 self.log("trigger", f"P{int(resolution.rule.tier)}", f"{resolution.rule.name}: {headline}")
             else:
                 self.log("info", "engine", "no active context")
+
+        analytics_snap = ANALYTICS_MANAGER.record_tick(resolution, force_save=trigger_changed)
+        self.analytics_changed.emit(analytics_snap)
 
         outgoing = resolution.presence if resolution.sent else None
         if outgoing != self._last_outgoing:

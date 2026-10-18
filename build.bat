@@ -1,13 +1,13 @@
 @echo off
 setlocal EnableDelayedExpansion
-title OmniPresence v1.0.0 - Automated Standalone .EXE Builder (Publisher: Raf446)
+title OmniPresence v2.2 - Automated Standalone .EXE Builder (Publisher: Raf446)
 
 cd /d "%~dp0"
 
 echo ====================================================================
 echo    OmniPresence Standalone .EXE Builder
 echo    App Name  : OmniPresence
-echo    Version   : 2.1.1
+echo    Version   : 2.2
 echo    Publisher : Raf446
 echo ====================================================================
 echo.
@@ -80,3 +80,4 @@ if exist "dist\OmniPresence.exe" (
 
 if not defined CI pause
 exit /b 0
+

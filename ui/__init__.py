@@ -18,45 +18,45 @@ from PySide6.QtGui import (
     QRadialGradient,
 )
 
-# Layered dark mode palette
-BG = "#0c0e12"
-SURFACE = "#141820"
-SURFACE_RAISED = "#1b212c"
-BORDER = "rgba(255, 255, 255, 0.08)"
-BORDER_STRONG = "rgba(255, 255, 255, 0.16)"
-TEXT = "#eef2f8"
-MUTED = "#94a0b8"
-DIM = "#6c788e"
-ACCENT = "#2979ff"
-SUCCESS = "#00e676"
-WARN = "#ffca28"
-DANGER = "#ff4d4d"
+# Obsidian Glass v2.2.0 layered palette
+BG = "#0B0D13"
+SURFACE = "#171B28"
+SURFACE_RAISED = "#202638"
+BORDER = "rgba(255, 255, 255, 0.07)"
+BORDER_STRONG = "rgba(56, 189, 248, 0.35)"
+TEXT = "#F8FAFC"
+MUTED = "#94A3B8"
+DIM = "#64748B"
+ACCENT = "#38BDF8"
+SUCCESS = "#10B981"
+WARN = "#F59E0B"
+DANGER = "#EF4444"
 
 STATUS_COLORS: dict[str, str] = {
-    "connected": "#00e676",     # Pulsating Emerald Green
-    "connecting": "#ffca28",    # Pulsating Amber Yellow
-    "reconnecting": "#ffca28",  # Pulsating Amber Yellow
-    "disconnected": "#78909c",  # Muted Slate / Red-Grey
-    "error": "#ff4d4d",         # Crimson Red
+    "connected": "#10B981",     # Pulsating Emerald Green
+    "connecting": "#F59E0B",    # Pulsating Amber Yellow
+    "reconnecting": "#F59E0B",  # Pulsating Amber Yellow
+    "disconnected": "#64748B",  # Muted Slate
+    "error": "#EF4444",         # Crimson Red
 }
 
 # Exact Pill Badge colors for Priority Tiers P1..P6
 TIER_COLORS: dict[int, str] = {
-    1: "#ff4d4d",  # P1 Manual Override (Crimson Red)
-    2: "#ff9800",  # P2 Compiler Active (Amber Orange + pulse)
-    3: "#00e676",  # P3 Gaming Mode (Emerald Green)
-    4: "#2979ff",  # P4 IDE / Git Context (Sapphire Blue)
-    5: "#b388ff",  # P5 Media / Music Playing (Violet Purple)
-    6: "#78909c",  # P6 Idle / AFK (Muted Slate)
+    1: "#EF4444",  # P1 Manual Override / Stealth Shield (Crimson Red)
+    2: "#F59E0B",  # P2 Compiler Active (Amber Orange + pulse)
+    3: "#10B981",  # P3 Gaming Mode (Emerald Green)
+    4: "#38BDF8",  # P4 IDE / Git Context (Cyan / Sapphire Blue)
+    5: "#A855F7",  # P5 Media / Music Playing (Violet Purple)
+    6: "#64748B",  # P6 Idle / AFK (Muted Slate)
 }
 
 TIER_TITLES: dict[int, str] = {
-    1: "Manual Override",
+    1: "Manual / Shield",
     2: "Compiler Active",
     3: "Gaming Mode",
     4: "IDE / Git Context",
     5: "Media Playing",
-    6: "Idle / AFK",
+    6: "Idle / Celestial",
 }
 
 UI_FAMILIES = ("Inter", "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI")
@@ -78,7 +78,7 @@ def runtime_config_dir() -> Path:
         bundled_dir = resource_path("config")
         try:
             target_dir.mkdir(parents=True, exist_ok=True)
-            for filename in ("settings.json", "rules.json"):
+            for filename in ("settings.json", "rules.json", "custom_presets.json"):
                 dst = target_dir / filename
                 src = bundled_dir / filename
                 if not dst.exists() and src.exists():
@@ -157,3 +157,4 @@ def app_icon(status: str = "disconnected") -> QIcon:
         painter.end()
         icon.addPixmap(pixmap)
     return icon
+

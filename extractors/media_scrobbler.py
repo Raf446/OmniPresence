@@ -435,7 +435,10 @@ class _ArtworkRunnable(QRunnable):
             url = self._resolver.fetch_sync(self._info.artist, self._info.title, self._info.album)
         except Exception:
             url = ""
-        self.signals.finished.emit(self._cache_key, self._info, url)
+        try:
+            self.signals.finished.emit(self._cache_key, self._info, url)
+        except RuntimeError:
+            pass
 
 
 class MediaScrobbler(QThread):

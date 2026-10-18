@@ -11,7 +11,9 @@ from PySide6.QtWidgets import QApplication
 
 from core.ipc_manager import IPCManager
 from core.priority_engine import RuleBook, RuleError
+from core.privacy_shield import PRIVACY_SHIELD
 from core.process_watcher import ProcessWatcher
+from core.settings_manager import SettingsManager
 from core.state_manager import Settings, StateManager
 from extractors.media_scrobbler import MediaScrobbler
 from ui import app_icon, resource_path, runtime_config_dir
@@ -44,13 +46,26 @@ def _sync_autostart(enabled: bool, script_path: Path) -> None:
         pass
 
 
+def _parse_smoke_arg(raw: str) -> float:
+    text = (raw or "").strip()
+    if not text:
+        return 0.0
+    try:
+        return float(text)
+    except ValueError:
+        parts = text.split(".")
+        if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+            return float(f"{parts[0]}.{parts[1]}")
+        return 2.0
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="OmniPresence Discord Rich Presence Engine")
+    parser = argparse.ArgumentParser(description="OmniPresence Discord Rich Presence Engine v2.2")
     parser.add_argument("--minimized", action="store_true", help="Start hidden in the system tray")
     parser.add_argument("--client-id", type=str, default="", help="Override Discord Application ID")
     parser.add_argument(
         "--smoke-test",
-        type=float,
+        type=_parse_smoke_arg,
         default=0.0,
         help="Run full engine and UI for N seconds and exit cleanly (0 = normal run)",
     )
@@ -74,11 +89,12 @@ def main(argv: list[str] | None = None) -> int:
     settings_path = config_dir / "settings.json"
     rules_path = config_dir / "rules.json"
 
-    settings = Settings.load(settings_path)
+    settings = SettingsManager.instance(settings_path).reload(settings_path)
     if args.client_id.strip():
         settings.discord_client_id = args.client_id.strip()
 
-    _sync_autostart(settings.auto_start, Path(__file__).resolve())
+    script_file = Path(__file__).resolve()
+    _sync_autostart(settings.auto_start, script_file)
 
     rule_error = ""
     try:
@@ -87,8 +103,9 @@ def main(argv: list[str] | None = None) -> int:
         rule_error = str(exc)
         rulebook = RuleBook(())
 
-    state = StateManager(settings, rules_path, rulebook, rule_error)
-    state.log("info", "boot", f"loaded {len(rulebook.rules)} rules from {rules_path}")
+    state = StateManager(settings, rules_path, rulebook, rule_error, privacy_shield=PRIVACY_SHIELD)
+    state.settings_updated.connect(lambda s: _sync_autostart(s.auto_start, script_file))
+    state.log("info", "boot", f"OmniPresence v2.1.1 initialized ({len(rulebook.rules)} rules loaded)")
     if rule_error:
         state.log("error", "rules", rule_error)
 
@@ -135,6 +152,7 @@ def main(argv: list[str] | None = None) -> int:
         state.log("info", "shutdown", "stopping background workers and closing IPC pipe")
         window.prepare_quit()
         tray.hide()
+        PRIVACY_SHIELD.stop()
         watcher.stop()
         scrobbler.stop()
         ipc.stop()
@@ -148,6 +166,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.minimized:
         window.show()
 
+    PRIVACY_SHIELD.start()
     watcher.start()
     scrobbler.start()
     ipc.start()
@@ -160,3 +179,4 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

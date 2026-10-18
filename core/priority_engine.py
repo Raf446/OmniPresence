@@ -13,11 +13,14 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 from urllib.parse import quote
 
+from core.settings_manager import SETTINGS_MANAGER
+from extractors.celestial_sync import CELESTIAL_SYNC
 from extractors.github_resolver import (
     DEFAULT_GITHUB_USER,
     GITHUB_AVATAR_RESOLVER,
     extract_github_owner,
 )
+from extractors.mood_engine import MOOD_ENGINE
 from extractors.youtube_resolver import YOUTUBE_THUMBNAIL_RESOLVER
 
 
@@ -661,18 +664,54 @@ class PriorityEngine:
         idle_threshold: float,
         show_standby: bool = True,
         show_buttons: bool = True,
+        mood_engine_enabled: bool = True,
+        mood_apply_to_small_badge: bool = True,
+        celestial_sync_enabled: bool = True,
+        celestial_append_to_state: bool = True,
+        privacy_show_city: bool | None = None,
+        idle_custom_image: str | None = None,
     ) -> None:
         self.rulebook = rulebook
         self.idle_threshold = idle_threshold
         self.show_standby = show_standby
         self.show_buttons = show_buttons
+        self.mood_engine_enabled = mood_engine_enabled
+        self.mood_apply_to_small_badge = mood_apply_to_small_badge
+        self.celestial_sync_enabled = celestial_sync_enabled
+        self.celestial_append_to_state = celestial_append_to_state
+        self.privacy_show_city = privacy_show_city
+        self.idle_custom_image = idle_custom_image
         self._session_start: dict[str, float] = {}
         self._session_seen: dict[str, float] = {}
 
-    def configure(self, idle_threshold: float, show_standby: bool, show_buttons: bool) -> None:
+    def configure(
+        self,
+        idle_threshold: float,
+        show_standby: bool,
+        show_buttons: bool,
+        *,
+        mood_engine_enabled: bool | None = None,
+        mood_apply_to_small_badge: bool | None = None,
+        celestial_sync_enabled: bool | None = None,
+        celestial_append_to_state: bool | None = None,
+        privacy_show_city: bool | None = None,
+        idle_custom_image: str | None = None,
+    ) -> None:
         self.idle_threshold = idle_threshold
         self.show_standby = show_standby
         self.show_buttons = show_buttons
+        if mood_engine_enabled is not None:
+            self.mood_engine_enabled = bool(mood_engine_enabled)
+        if mood_apply_to_small_badge is not None:
+            self.mood_apply_to_small_badge = bool(mood_apply_to_small_badge)
+        if celestial_sync_enabled is not None:
+            self.celestial_sync_enabled = bool(celestial_sync_enabled)
+        if celestial_append_to_state is not None:
+            self.celestial_append_to_state = bool(celestial_append_to_state)
+        if privacy_show_city is not None:
+            self.privacy_show_city = bool(privacy_show_city)
+        if idle_custom_image is not None:
+            self.idle_custom_image = str(idle_custom_image)
 
     def resolve(self, inp: EngineInput) -> Resolution:
         book = self.rulebook
@@ -864,6 +903,39 @@ class PriorityEngine:
                 return self._render_custom_manual(rule, activity, manual_cfg, now)
 
         variables = {**shared, **activity.variables}
+        if not variables.get("cpu_percent") or not variables.get("ram_used_gb") or not variables.get("ram_total_gb"):
+            try:
+                import psutil
+
+                mem = psutil.virtual_memory()
+                gib = 1024**3
+                cpu_now = int(round(psutil.cpu_percent(interval=None)))
+                variables.setdefault("cpu", str(cpu_now))
+                variables.setdefault("cpu_percent", str(cpu_now))
+                variables.setdefault("ram", str(int(round(mem.percent))))
+                variables.setdefault("ram_used_gb", f"{mem.used / gib:.1f}")
+                variables.setdefault("ram_total_gb", f"{mem.total / gib:.0f}")
+            except Exception:
+                variables.setdefault("cpu_percent", variables.get("cpu", "8"))
+                variables.setdefault("ram_used_gb", "6.4")
+                variables.setdefault("ram_total_gb", "16")
+
+        if self.celestial_sync_enabled and CELESTIAL_SYNC.enabled:
+            snap = CELESTIAL_SYNC.snapshot()
+            for k, v in snap.as_variables().items():
+                variables.setdefault(k, v)
+        else:
+            for k in (
+                "ambient_vibe",
+                "temp_c",
+                "weather_desc",
+                "city_name",
+                "celestial_icon",
+                "solar_phase",
+                "lunar_phase",
+            ):
+                variables.pop(k, None)
+
         if rule.id == "browser-youtube":
             video_title = variables.get("video", "").strip()
             if video_title:
@@ -913,6 +985,19 @@ class PriorityEngine:
                 )
                 variables["github_url"] = "https://github.com"
 
+        # Adaptive Mood Engine: quantize cover/thumbnail URL into {mood_badge} and {mood_name}
+        mood_source_url = (
+            variables.get("artwork_url")
+            or variables.get("youtube_thumbnail")
+            or ""
+        ).strip()
+        mood_res = None
+        if self.mood_engine_enabled and MOOD_ENGINE.enabled and mood_source_url.lower().startswith("https://"):
+            mood_res = MOOD_ENGINE.resolve_for_url(mood_source_url, background=True)
+            if mood_res is not None:
+                variables["mood_badge"] = mood_res.mood_badge
+                variables["mood_name"] = mood_res.mood_name
+
         spec = rule.presence
         start, end = self._timestamps(rule, activity)
 
@@ -926,8 +1011,12 @@ class PriorityEngine:
                 buttons.append((label, url))
 
         clean_buttons = sanitize_buttons(buttons)
+        details_text = render_first(spec.details, variables)
+        state_text = render_first(spec.state, variables)
         large_image = render_first(spec.large_image, variables)
         large_text = render_first(spec.large_text, variables)
+        small_image = render_first(spec.small_image, variables)
+        small_text = render_first(spec.small_text, variables)
 
         if rule.id == "browser-youtube":
             yt_thumb = variables.get("youtube_thumbnail", "").strip()
@@ -960,13 +1049,69 @@ class PriorityEngine:
                 elif track:
                     large_text = track
 
+        if mood_res is not None and self.mood_apply_to_small_badge and (rule.kind == "media" or rule.id == "browser-youtube"):
+            small_image = mood_res.mood_badge
+            small_text = f"{small_text} \u2022 {mood_res.mood_name}" if small_text else mood_res.mood_name
+
+        # Tier P6 IDLE / Standby integration with Hardware Telemetry & Celestial/Weather Sync
+        if rule.tier == Tier.IDLE or rule.kind in ("afk", "standby"):
+            try:
+                cpu_pct = int(round(float(variables.get("cpu_percent") or variables.get("cpu") or 0)))
+            except (TypeError, ValueError):
+                cpu_pct = 0
+            try:
+                ram_used = float(variables.get("ram_used_gb") or 0.0)
+            except (TypeError, ValueError):
+                ram_used = 0.0
+            try:
+                ram_total = float(variables.get("ram_total_gb") or 16.0)
+            except (TypeError, ValueError):
+                ram_total = 16.0
+
+            details_text = f"CPU: {cpu_pct}% \u2022 RAM: {ram_used:.1f} / {ram_total:.0f} GB"
+            small_image = "cpu_chip" if cpu_pct >= 50 else "ram_chip"
+            small_text = "OmniPresence v2.2.0"
+
+            live_settings = SETTINGS_MANAGER.settings
+            show_city = (
+                bool(self.privacy_show_city)
+                if self.privacy_show_city is not None
+                else bool(getattr(live_settings, "privacy_show_city", False))
+            )
+            custom_idle_img = (
+                self.idle_custom_image
+                if self.idle_custom_image is not None
+                else str(getattr(live_settings, "idle_custom_image", "") or "")
+            ).strip()
+
+            if self.celestial_sync_enabled and CELESTIAL_SYNC.enabled:
+                city_name = (variables.get("city_name") or "").strip()
+                raw_temp = str(variables.get("temp_c") or "24").replace("\u00b0C", "").strip() or "24"
+                weather_desc = (variables.get("weather_desc") or "Clear Sky").strip()
+                ambient_vibe = (variables.get("ambient_vibe") or "Starlit Night").strip()
+                celestial_icon = (variables.get("celestial_icon") or "celestial_night").strip()
+
+                if show_city and city_name:
+                    state_text = f"{city_name} \u2022 {raw_temp}\u00b0C {weather_desc}"
+                else:
+                    state_text = f"{raw_temp}\u00b0C \u2022 {weather_desc}"
+                large_image = custom_idle_img if custom_idle_img else celestial_icon
+                large_text = f"System Idle \u2022 {ambient_vibe}"
+            else:
+                large_image = custom_idle_img or large_image or "idle"
+                large_text = large_text or "System Idle"
+        elif self.celestial_sync_enabled and CELESTIAL_SYNC.enabled:
+            ambient_vibe = variables.get("ambient_vibe", "").strip()
+            if self.celestial_append_to_state and ambient_vibe and small_text and ambient_vibe not in small_text:
+                small_text = f"{small_text} \u2022 {ambient_vibe}"
+
         return PresenceData(
-            details=_discord_text(render_first(spec.details, variables)),
-            state=_discord_text(render_first(spec.state, variables)),
+            details=_discord_text(details_text),
+            state=_discord_text(state_text),
             large_image=large_image,
             large_text=_discord_text(large_text),
-            small_image=render_first(spec.small_image, variables),
-            small_text=_discord_text(render_first(spec.small_text, variables)),
+            small_image=small_image,
+            small_text=_discord_text(small_text),
             start=start,
             end=end,
             buttons=clean_buttons,
