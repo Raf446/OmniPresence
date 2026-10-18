@@ -217,13 +217,22 @@ class StateManager(QObject):
 
     @Slot(object)
     def on_media(self, info) -> None:
-        prev_key = getattr(self._media, "track_key", None) if self._media is not None else None
-        new_key = getattr(info, "track_key", None) if info is not None else None
+        prev_sig = (
+            (getattr(self._media, "track_hash", "") or (self._media.app_id, self._media.title, self._media.artist))
+            if self._media is not None
+            else None
+        )
+        new_sig = (
+            (getattr(info, "track_hash", "") or (info.app_id, info.title, info.artist))
+            if info is not None
+            else None
+        )
         self._media = info
         if info is None:
-            if prev_key is not None:
+            self.engine.clear_media_grace()
+            if prev_sig is not None:
                 self.log("info", "media", "playback stopped")
-        elif new_key != prev_key:
+        elif new_sig != prev_sig:
             self.log("info", "media", f"now playing: {info.title}" + (f" by {info.artist}" if info.artist else ""))
         self._reevaluate()
 

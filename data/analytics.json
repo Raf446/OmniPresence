@@ -2,19 +2,51 @@
   "date": "2026-10-18",
   "totals": {
     "Coding": 79.02,
-    "Media": 833.42,
+    "Media": 1010.38,
     "Gaming": 0.0,
     "Browsing": 12.26,
-    "Idle": 658.52
+    "Idle": 661.68
   },
   "sessions": [
     {
       "category": "Media",
-      "headline": "Cincin (Janji Hati) • by David Bayu",
+      "headline": "Hati-Hati di Jalan • by Tulus",
+      "rule_id": "spotify",
+      "started_at": 1792328139.23,
+      "updated_at": 1792328218.98,
+      "duration_seconds": 70.06
+    },
+    {
+      "category": "Idle",
+      "headline": "CPU: 31% • RAM: 12.2 / 14 GB • 27°C • Partly Cloudy",
+      "rule_id": "idle-standby",
+      "started_at": 1792328137.33,
+      "updated_at": 1792328138.86,
+      "duration_seconds": 2.51
+    },
+    {
+      "category": "Media",
+      "headline": "Sepenuh Hati • by Rony Parulian",
+      "rule_id": "spotify",
+      "started_at": 1792328123.84,
+      "updated_at": 1792328136.83,
+      "duration_seconds": 13.98
+    },
+    {
+      "category": "Idle",
+      "headline": "CPU: 23% • RAM: 12.2 / 14 GB • 27°C • Partly Cloudy",
+      "rule_id": "idle-standby",
+      "started_at": 1792328123.19,
+      "updated_at": 1792328123.81,
+      "duration_seconds": 1.61
+    },
+    {
+      "category": "Media",
+      "headline": "Sepenuh Hati • by Rony Parulian",
       "rule_id": "spotify",
       "started_at": 1792311571.85,
-      "updated_at": 1792325198.37,
-      "duration_seconds": 214.81
+      "updated_at": 1792328122.69,
+      "duration_seconds": 309.33
     },
     {
       "category": "Browsing",
@@ -175,38 +207,6 @@
       "started_at": 1792309961.45,
       "updated_at": 1792309980.94,
       "duration_seconds": 20.49
-    },
-    {
-      "category": "Media",
-      "headline": "Bunuh Idolamu • by Hindia",
-      "rule_id": "spotify",
-      "started_at": 1792309960.59,
-      "updated_at": 1792309960.73,
-      "duration_seconds": 1.14
-    },
-    {
-      "category": "Coding",
-      "headline": "Deep Work Session • Do Not Disturb • Focus Mode",
-      "rule_id": "manual-override",
-      "started_at": 1792309949.56,
-      "updated_at": 1792309959.73,
-      "duration_seconds": 11.17
-    },
-    {
-      "category": "Media",
-      "headline": "Bunuh Idolamu • by Hindia",
-      "rule_id": "spotify",
-      "started_at": 1792307685.88,
-      "updated_at": 1792309948.6,
-      "duration_seconds": 452.83
-    },
-    {
-      "category": "Idle",
-      "headline": "CPU: 13% • RAM: 7.0 / 14 GB • 24°C • Partly Cloudy",
-      "rule_id": "idle-standby",
-      "started_at": 1792284812.07,
-      "updated_at": 1792285101.81,
-      "duration_seconds": 290.74
     }
   ],
   "days": {
@@ -235,21 +235,53 @@
     "2026-10-18": {
       "totals": {
         "Coding": 79.02,
-        "Media": 833.42,
+        "Media": 1010.38,
         "Gaming": 0.0,
         "Browsing": 12.26,
-        "Idle": 658.52
+        "Idle": 661.68
       },
-      "total_active_seconds": 924.7,
-      "total_tracked_seconds": 1583.22,
+      "total_active_seconds": 1101.66,
+      "total_tracked_seconds": 1763.34,
       "sessions": [
         {
           "category": "Media",
-          "headline": "Cincin (Janji Hati) • by David Bayu",
+          "headline": "Hati-Hati di Jalan • by Tulus",
+          "rule_id": "spotify",
+          "started_at": 1792328139.23,
+          "updated_at": 1792328218.98,
+          "duration_seconds": 70.06
+        },
+        {
+          "category": "Idle",
+          "headline": "CPU: 31% • RAM: 12.2 / 14 GB • 27°C • Partly Cloudy",
+          "rule_id": "idle-standby",
+          "started_at": 1792328137.33,
+          "updated_at": 1792328138.86,
+          "duration_seconds": 2.51
+        },
+        {
+          "category": "Media",
+          "headline": "Sepenuh Hati • by Rony Parulian",
+          "rule_id": "spotify",
+          "started_at": 1792328123.84,
+          "updated_at": 1792328136.83,
+          "duration_seconds": 13.98
+        },
+        {
+          "category": "Idle",
+          "headline": "CPU: 23% • RAM: 12.2 / 14 GB • 27°C • Partly Cloudy",
+          "rule_id": "idle-standby",
+          "started_at": 1792328123.19,
+          "updated_at": 1792328123.81,
+          "duration_seconds": 1.61
+        },
+        {
+          "category": "Media",
+          "headline": "Sepenuh Hati • by Rony Parulian",
           "rule_id": "spotify",
           "started_at": 1792311571.85,
-          "updated_at": 1792325198.37,
-          "duration_seconds": 214.81
+          "updated_at": 1792328122.69,
+          "duration_seconds": 309.33
         },
         {
           "category": "Browsing",
@@ -410,41 +442,9 @@
           "started_at": 1792309961.45,
           "updated_at": 1792309980.94,
           "duration_seconds": 20.49
-        },
-        {
-          "category": "Media",
-          "headline": "Bunuh Idolamu • by Hindia",
-          "rule_id": "spotify",
-          "started_at": 1792309960.59,
-          "updated_at": 1792309960.73,
-          "duration_seconds": 1.14
-        },
-        {
-          "category": "Coding",
-          "headline": "Deep Work Session • Do Not Disturb • Focus Mode",
-          "rule_id": "manual-override",
-          "started_at": 1792309949.56,
-          "updated_at": 1792309959.73,
-          "duration_seconds": 11.17
-        },
-        {
-          "category": "Media",
-          "headline": "Bunuh Idolamu • by Hindia",
-          "rule_id": "spotify",
-          "started_at": 1792307685.88,
-          "updated_at": 1792309948.6,
-          "duration_seconds": 452.83
-        },
-        {
-          "category": "Idle",
-          "headline": "CPU: 13% • RAM: 7.0 / 14 GB • 24°C • Partly Cloudy",
-          "rule_id": "idle-standby",
-          "started_at": 1792284812.07,
-          "updated_at": 1792285101.81,
-          "duration_seconds": 290.74
         }
       ],
-      "updated_at": "2026-10-18T19:06:38"
+      "updated_at": "2026-10-18T19:56:58"
     }
   }
 }

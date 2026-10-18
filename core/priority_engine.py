@@ -657,6 +657,7 @@ class Resolution:
 
 class PriorityEngine:
     SESSION_GRACE = 120.0
+    MEDIA_TRANSITION_GRACE = 1.5
 
     def __init__(
         self,
@@ -683,6 +684,13 @@ class PriorityEngine:
         self.idle_custom_image = idle_custom_image
         self._session_start: dict[str, float] = {}
         self._session_seen: dict[str, float] = {}
+        self._last_media_candidate: tuple[Rule, Activity] | None = None
+        self._media_grace_started_at: float | None = None
+
+    def clear_media_grace(self) -> None:
+        """Clear cached media transition candidate once the scrobbler's stop grace period has expired."""
+        self._last_media_candidate = None
+        self._media_grace_started_at = None
 
     def configure(
         self,
@@ -805,9 +813,25 @@ class PriorityEngine:
                     "query": f"{media.title} {media.artist}".strip(),
                 }
                 key = render(rule.session_key, variables) if rule.session_key else None
-                found.append(
-                    (rule, Activity(rule.id, key or media.title, variables, media.start_at, media.end_at))
-                )
+                media_activity = Activity(rule.id, key or media.title, variables, media.start_at, media.end_at)
+                self._last_media_candidate = (rule, media_activity)
+                self._media_grace_started_at = None
+                found.append((rule, media_activity))
+        elif self._last_media_candidate is not None:
+            prev_rule, prev_act = self._last_media_candidate
+            active_rule = book.get(prev_rule.id)
+            if active_rule is not None and active_rule.enabled:
+                if self._media_grace_started_at is None:
+                    self._media_grace_started_at = inp.now
+                if 0.0 <= (inp.now - self._media_grace_started_at) < self.MEDIA_TRANSITION_GRACE:
+                    merged_vars = {**shared, **prev_act.variables}
+                    found.append((active_rule, replace(prev_act, variables=merged_vars)))
+                else:
+                    self._last_media_candidate = None
+                    self._media_grace_started_at = None
+            else:
+                self._last_media_candidate = None
+                self._media_grace_started_at = None
 
         manual_cfg = self._coerce_manual(inp.manual)
         if manual_cfg is not None:

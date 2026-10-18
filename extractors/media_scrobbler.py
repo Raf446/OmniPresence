@@ -17,7 +17,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Callable
 
-from PySide6.QtCore import QObject, QRunnable, QThread, QThreadPool, Signal
+from PySide6.QtCore import QObject, QRunnable, Qt, QThread, QThreadPool, QTimer, Signal, Slot
 
 try:
     from winsdk.windows.media.control import (
@@ -33,6 +33,7 @@ except Exception:  # winsdk missing, or not Windows
 
 POLL_FALLBACK_SECONDS = 0.8
 SEEK_TOLERANCE_SECONDS = 3.0
+MEDIA_STOP_GRACE_PERIOD = 1.5
 
 ITUNES_SEARCH_URL = "https://itunes.apple.com/search"
 DEEZER_SEARCH_URL = "https://api.deezer.com/search"
@@ -811,6 +812,16 @@ class _ArtworkRunnable(QRunnable):
             url = ""
         if self._is_stale_cb is not None and self._is_stale_cb():
             return
+        if url:
+            try:
+                from extractors.mood_engine import MOOD_ENGINE
+
+                if MOOD_ENGINE.enabled:
+                    MOOD_ENGINE.resolve_for_url(url, background=False)
+            except Exception:
+                pass
+        if self._is_stale_cb is not None and self._is_stale_cb():
+            return
         try:
             self.signals.finished.emit(
                 self._request_id,
@@ -827,8 +838,12 @@ class _ArtworkRunnable(QRunnable):
 class MediaScrobbler(QThread):
     """Runs an asyncio loop that watches SMTC sessions and dispatches QThreadPool tasks for album art."""
 
+    MEDIA_STOP_GRACE_PERIOD = MEDIA_STOP_GRACE_PERIOD
+
     media_changed = Signal(object)
     message = Signal(str, str)
+    _start_stop_timer_sig = Signal(int)
+    _cancel_stop_timer_sig = Signal()
 
     def __init__(
         self,
@@ -848,15 +863,61 @@ class MediaScrobbler(QThread):
         self._handlers: list = []
         self._last_identity: tuple | None = None
         self._last_start: float | None = None
+        self._last_info: MediaInfo | None = None
         self._request_seq: int = 0
         self._active_request_id: int = 0
         self._active_track_hash: str = ""
         self._active_track_ts: float = 0.0
+        self._stop_grace_until: float | None = None
         self._pending_art_keys: dict[str, int] = {}
         self._active_runnables: set[_ArtworkRunnable] = set()
 
+        self._stop_timer = QTimer(self)
+        self._stop_timer.setSingleShot(True)
+        self._stop_timer.setInterval(int(self.MEDIA_STOP_GRACE_PERIOD * 1000))
+        self._stop_timer.timeout.connect(self._on_stop_grace_expired)
+        self._start_stop_timer_sig.connect(self._on_start_stop_timer)
+        self._cancel_stop_timer_sig.connect(self._on_cancel_stop_timer)
+
+    @Slot(int)
+    def _on_start_stop_timer(self, interval_ms: int) -> None:
+        self._stop_timer.start(max(100, int(interval_ms)))
+
+    @Slot()
+    def _on_cancel_stop_timer(self) -> None:
+        if self._stop_timer.isActive():
+            self._stop_timer.stop()
+
+    @Slot()
+    def _on_stop_grace_expired(self) -> None:
+        with self._state_lock:
+            if self._stop_grace_until is None:
+                return
+            self._stop_grace_until = 0.0
+        self._commit_media_stop()
+        self._poke()
+
+    def _commit_media_stop(self) -> None:
+        """Emit media stop and clear state only after MEDIA_STOP_GRACE_PERIOD has elapsed without resumption."""
+        should_emit = False
+        with self._state_lock:
+            if self._stop_grace_until is None and self._last_identity is None:
+                return
+            if self._stop_grace_until is not None and time.monotonic() < self._stop_grace_until:
+                return
+            self._stop_grace_until = None
+            self._active_track_hash = ""
+            self._last_info = None
+            if self._last_identity is not None:
+                self._last_identity, self._last_start = None, None
+                should_emit = True
+        self._cancel_stop_timer_sig.emit()
+        if should_emit:
+            self.media_changed.emit(None)
+
     def stop(self) -> None:
         self._halt.set()
+        self._cancel_stop_timer_sig.emit()
         self._poke()
         self.wait(3000)
 
@@ -870,11 +931,11 @@ class MediaScrobbler(QThread):
         if self._halt.is_set():
             return True
         with self._state_lock:
-            return (
-                request_id != self._active_request_id
-                or track_hash != self._active_track_hash
-                or not self._active_track_hash
-            )
+            if not self._active_track_hash or not track_hash:
+                return True
+            if track_hash != self._active_track_hash:
+                return True
+            return request_id < self._active_request_id
 
     def run(self) -> None:
         if not SMTC_AVAILABLE:
@@ -904,10 +965,14 @@ class MediaScrobbler(QThread):
                 self.message.emit("warn", f"media poll failed: {exc!r}")
                 info = None
             self._publish(info)
+            with self._state_lock:
+                in_grace = self._stop_grace_until is not None
+            poll_wait = 0.25 if in_grace else POLL_FALLBACK_SECONDS
             try:
-                await asyncio.wait_for(self._wake.wait(), timeout=POLL_FALLBACK_SECONDS)
+                await asyncio.wait_for(self._wake.wait(), timeout=poll_wait)
             except asyncio.TimeoutError:
                 pass
+        self._cancel_stop_timer_sig.emit()
         self.media_changed.emit(None)
 
     def _subscribe_manager(self, manager) -> None:
@@ -982,7 +1047,11 @@ class MediaScrobbler(QThread):
                 duration, start_at, end_at = span, now - position, now - position + span
 
         track_hash = make_track_hash(artist, title)
+        cancel_grace = False
         with self._state_lock:
+            if self._stop_grace_until is not None:
+                self._stop_grace_until = None
+                cancel_grace = True
             if track_hash != self._active_track_hash:
                 self._request_seq += 1
                 self._active_request_id = self._request_seq
@@ -990,7 +1059,9 @@ class MediaScrobbler(QThread):
                 self._active_track_ts = time.monotonic()
             request_id = self._active_request_id
 
-        # Instant check against normalized LRU cache; if missing, emit placeholder immediately and dispatch QThreadPool task
+        if cancel_grace:
+            self._cancel_stop_timer_sig.emit()
+
         cached, artwork_url = self._art.get_cached(artist, title, album)
         info = MediaInfo(
             app_id=session.source_app_user_model_id,
@@ -1004,8 +1075,6 @@ class MediaScrobbler(QThread):
             request_id=request_id,
             track_hash=track_hash,
         )
-        if not cached:
-            self._dispatch_artwork_task(info, request_id, track_hash)
         return info
 
     def _dispatch_artwork_task(self, info: MediaInfo, request_id: int, track_hash: str) -> None:
@@ -1014,8 +1083,9 @@ class MediaScrobbler(QThread):
         cache_key = self._art.make_key(info.artist, info.title, info.album)
         dispatched_at = time.monotonic()
         with self._state_lock:
-            if self._pending_art_keys.get(cache_key) == request_id:
+            if self._pending_art_keys.get(track_hash) == request_id:
                 return
+            self._pending_art_keys[track_hash] = request_id
             self._pending_art_keys[cache_key] = request_id
 
         runnable = _ArtworkRunnable(
@@ -1033,7 +1103,7 @@ class MediaScrobbler(QThread):
         def _on_done(
             req_id: int,
             req_hash: str,
-            req_ts: float,
+            _req_ts: float,
             key: str,
             orig_info: MediaInfo,
             url: str,
@@ -1043,18 +1113,12 @@ class MediaScrobbler(QThread):
                 self._active_runnables.discard(r)
                 if self._pending_art_keys.get(key) == req_id:
                     self._pending_art_keys.pop(key, None)
-                is_stale = (
-                    self._halt.is_set()
-                    or req_id != self._active_request_id
-                    or req_hash != self._active_track_hash
-                    or req_ts < self._active_track_ts
-                    or self._last_identity is None
-                    or self._last_identity[:4] != orig_info.track_key
-                )
+                if self._pending_art_keys.get(req_hash) == req_id:
+                    self._pending_art_keys.pop(req_hash, None)
                 current_start = self._last_start
 
             # Discard stale worker payload immediately if user already skipped to another track
-            if is_stale:
+            if self._is_request_stale(req_id, req_hash):
                 return
 
             clean_url = sanitize_artwork_url(url)
@@ -1064,7 +1128,7 @@ class MediaScrobbler(QThread):
                 enriched = replace(
                     orig_info,
                     artwork_url=clean_url,
-                    start_at=current_start,
+                    start_at=current_start if current_start is not None else orig_info.start_at,
                     request_id=req_id,
                     track_hash=req_hash,
                 )
@@ -1077,45 +1141,91 @@ class MediaScrobbler(QThread):
                     f"cover score below threshold or unavailable for '{orig_info.title}', using fallback icon ({fallback_icon})",
                 )
 
-        runnable.signals.finished.connect(_on_done)
+        runnable.signals.finished.connect(_on_done, Qt.ConnectionType.DirectConnection)
         self._pool.start(runnable)
 
     def _publish_artwork_update(self, enriched: MediaInfo, req_id: int, req_hash: str) -> None:
         """Publish asynchronous artwork enrichment only if the track is still the active SMTC session."""
+        if self._is_request_stale(req_id, req_hash):
+            return
+        emit_payload: MediaInfo | None = None
         with self._state_lock:
             if (
                 self._halt.is_set()
-                or req_id != self._active_request_id
+                or not self._active_track_hash
                 or req_hash != self._active_track_hash
-                or self._last_identity is None
-                or self._last_identity[:4] != enriched.track_key
+                or req_id < self._active_request_id
             ):
                 return
-            if enriched.identity != self._last_identity:
-                self._last_identity = enriched.identity
-                self.media_changed.emit(enriched)
+            base = (
+                self._last_info
+                if (self._last_info is not None and self._last_info.track_hash == req_hash)
+                else enriched
+            )
+            updated = replace(
+                base,
+                artwork_url=enriched.artwork_url,
+                start_at=self._last_start if self._last_start is not None else base.start_at,
+                request_id=self._active_request_id,
+                track_hash=req_hash,
+            )
+            if updated.identity != self._last_identity:
+                self._last_info = updated
+                self._last_identity = updated.identity
+                emit_payload = updated
+        if emit_payload is not None:
+            self.media_changed.emit(emit_payload)
 
     def _publish(self, info: MediaInfo | None) -> None:
+        if info is None:
+            should_start_timer = False
+            should_commit_stop = False
+            with self._state_lock:
+                if self._last_identity is None:
+                    self._stop_grace_until = None
+                    return
+                now = time.monotonic()
+                if self._stop_grace_until is None:
+                    self._stop_grace_until = now + self.MEDIA_STOP_GRACE_PERIOD
+                    should_start_timer = True
+                elif now >= self._stop_grace_until:
+                    should_commit_stop = True
+            if should_start_timer:
+                self._start_stop_timer_sig.emit(int(self.MEDIA_STOP_GRACE_PERIOD * 1000))
+            elif should_commit_stop:
+                self._commit_media_stop()
+            return
+
+        cancel_grace = False
+        should_emit = False
+        need_artwork_fetch = False
         with self._state_lock:
-            if info is None:
-                self._active_track_hash = ""
-                if self._last_identity is not None:
-                    self._last_identity, self._last_start = None, None
-                    self.media_changed.emit(None)
-                return
+            if self._stop_grace_until is not None:
+                self._stop_grace_until = None
+                cancel_grace = True
 
-            # Reject stale snapshots that do not match the latest active track hash
-            if info.track_hash and self._active_track_hash and info.track_hash != self._active_track_hash:
-                return
+            # Synchronize active sequence ID & hash if _publish was invoked with a newer track
+            if info.track_hash and info.track_hash != self._active_track_hash:
+                self._request_seq += 1
+                self._active_request_id = self._request_seq
+                self._active_track_hash = info.track_hash
+                self._active_track_ts = time.monotonic()
+                info = replace(info, request_id=self._active_request_id)
 
-            # Preserve resolved artwork URL if the same track is still playing and cache had a race
-            if (
-                not info.artwork_url
-                and self._last_identity is not None
-                and self._last_identity[:4] == info.track_key
-                and self._last_identity[4]
-            ):
-                info = replace(info, artwork_url=self._last_identity[4])
+            # Preserve resolved artwork URL if the same track is still playing
+            if not info.artwork_url:
+                if (
+                    self._last_info is not None
+                    and self._last_info.track_hash == info.track_hash
+                    and self._last_info.artwork_url
+                ):
+                    info = replace(info, artwork_url=self._last_info.artwork_url)
+                elif (
+                    self._last_identity is not None
+                    and self._last_identity[:3] == (info.app_id, info.title, info.artist)
+                    and self._last_identity[4]
+                ):
+                    info = replace(info, artwork_url=self._last_identity[4])
 
             changed = info.identity != self._last_identity
             sought = (
@@ -1123,7 +1233,26 @@ class MediaScrobbler(QThread):
                 and self._last_start is not None
                 and abs(info.start_at - self._last_start) > SEEK_TOLERANCE_SECONDS
             )
+            self._last_info = info
             if changed or sought:
                 self._last_identity, self._last_start = info.identity, info.start_at
-                self.media_changed.emit(info)
+                should_emit = True
+
+            if not info.artwork_url:
+                cached, cached_url = self._art.get_cached(info.artist, info.title, info.album)
+                if cached and cached_url:
+                    info = replace(info, artwork_url=sanitize_artwork_url(cached_url))
+                    self._last_info = info
+                    self._last_identity = info.identity
+                    should_emit = True
+                elif not cached:
+                    need_artwork_fetch = True
+
+        if cancel_grace:
+            self._cancel_stop_timer_sig.emit()
+        if should_emit:
+            self.media_changed.emit(info)
+        if need_artwork_fetch:
+            self._dispatch_artwork_task(info, info.request_id, info.track_hash)
+
 

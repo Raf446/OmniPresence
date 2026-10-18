@@ -102,6 +102,7 @@ class IPCManager(QThread):
     WINDOW_LIMIT = 4
     SUSTAINED_GAP_SECONDS = 4.5
     PRIORITY_SWITCH_GAP = 0.25
+    MEDIA_PLACEHOLDER_SETTLE_GAP = 0.45
     HEARTBEAT_SECONDS = 15.0
     LIVENESS_CHECK_SECONDS = 5.0
     CONNECT_TIMEOUT = 15.0
@@ -113,6 +114,9 @@ class IPCManager(QThread):
         self._desired: PresenceData | None = None
         self.pending_activity: PresenceData | None = None
         self._has_pending: bool = False
+        self._pending_staged_at: float = 0.0
+        self._cooldown_active: bool = False
+        self._cooldown_until: float = 0.0
         self._halt = threading.Event()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._wake: asyncio.Event | None = None
@@ -136,7 +140,6 @@ class IPCManager(QThread):
             or curr.details != prev.details
             or curr.state != prev.state
             or curr.large_image != prev.large_image
-            or curr.small_image != prev.small_image
             or curr.buttons != prev.buttons
             or start_shifted
         )
@@ -165,9 +168,27 @@ class IPCManager(QThread):
     def submit(self, presence: PresenceData | None) -> None:
         """Store the latest presence in pending_activity buffer and wake the IPC worker immediately."""
         with self._lock:
+            now = time.monotonic()
+            in_cooldown = self._cooldown_active or (now < self._cooldown_until)
+            if (
+                in_cooldown
+                and self._has_pending
+                and self.pending_activity is not None
+                and self.pending_activity.tier == 5
+                and presence is not None
+                and presence.tier >= 6
+            ):
+                return
+            is_new_track = (
+                self.pending_activity is None
+                or presence is None
+                or (presence.details, presence.state) != (self.pending_activity.details, self.pending_activity.state)
+            )
             self._desired = presence
             self.pending_activity = presence
             self._has_pending = True
+            if is_new_track or self._pending_staged_at <= 0.0:
+                self._pending_staged_at = now
         self._poke()
 
     def set_client_id(self, client_id: str) -> None:
@@ -191,10 +212,25 @@ class IPCManager(QThread):
             return self._client_id, active_payload, self._has_pending
 
     def _stage_pending(self, presence: PresenceData | None) -> None:
-        """Buffer an activity update when blocked by Discord IPC rate-limit cooldown."""
+        """Buffer an activity update when blocked by Discord IPC rate-limit cooldown.
+
+        Priority Guard: Protect pending P5 (Media Playing) payload from being overwritten
+        by a transient P6 (Standby CPU/Temp) payload while cooldown is active.
+        """
         with self._lock:
+            if (
+                self._has_pending
+                and self.pending_activity is not None
+                and self.pending_activity.tier == 5
+                and presence is not None
+                and presence.tier >= 6
+            ):
+                return
+            self._desired = presence
             self.pending_activity = presence
             self._has_pending = True
+            if self._pending_staged_at <= 0.0:
+                self._pending_staged_at = time.monotonic()
 
     def _consume_pending(self) -> PresenceData | None:
         """Atomically pop the latest buffered pending_activity ready for IPC transmission."""
@@ -202,6 +238,9 @@ class IPCManager(QThread):
             payload = self.pending_activity if self._has_pending else self._desired
             self._desired = payload
             self._has_pending = False
+            self._pending_staged_at = 0.0
+            self._cooldown_active = False
+            self._cooldown_until = 0.0
             return payload
 
     def _set_status(self, state: ConnectionState, detail: str = "") -> None:
@@ -321,6 +360,21 @@ class IPCManager(QThread):
                         else self.SUSTAINED_GAP_SECONDS
                     )
                     wait = max(wait, min_gap - (now - sent_at[-1]))
+
+                # When a new P5 Media track starts with a placeholder icon, allow a brief settle window (0.45s)
+                # so the background artwork resolver (or rapid multi-skip) coalesces into a single IPC send.
+                if (
+                    desired is not None
+                    and desired.tier == 5
+                    and (desired.large_image or "") in ("spotify", "applemusic", "music_placeholder")
+                ):
+                    with self._lock:
+                        staged_at = self._pending_staged_at
+                    if staged_at > 0.0:
+                        settle_rem = self.MEDIA_PLACEHOLDER_SETTLE_GAP - (now - staged_at)
+                        if settle_rem > 0.0:
+                            wait = max(wait, settle_rem)
+
                 if len(sent_at) >= self.WINDOW_LIMIT:
                     wait = max(wait, self.WINDOW_SECONDS - (now - sent_at[0]) + 0.08)
 
@@ -334,6 +388,9 @@ class IPCManager(QThread):
                     continue
 
                 # Rate-limit cooldown active: keep latest payload in pending_activity buffer and wake as soon as cooldown expires
+                with self._lock:
+                    self._cooldown_active = True
+                    self._cooldown_until = now + wait
                 self._stage_pending(desired)
                 timeout = wait
             else:
