@@ -1,4 +1,4 @@
-"""GitHub Releases Auto-Updater & Hot-Swap Binary Replacement for OmniPresence (v2.3.1)."""
+"""GitHub Releases Auto-Updater & Hot-Swap Binary Replacement for OmniPresence (v2.3.2)."""
 from __future__ import annotations
 
 import json
@@ -16,12 +16,12 @@ from PySide6.QtWidgets import QApplication
 
 GITHUB_REPO: str = "Raf446/OmniPresence"
 LATEST_RELEASE_API_URL: str = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-CURRENT_VERSION: str = "v2.3.1"
+CURRENT_VERSION: str = "v2.3.2"
 USER_AGENT: str = f"OmniPresence-Updater/{CURRENT_VERSION.lstrip('v')} (+https://github.com/{GITHUB_REPO})"
 
 
 def parse_semver(version_str: str) -> tuple[int, ...]:
-    """Convert a version tag like 'v2.3.1' or '2.3.0-beta.1' into an integer tuple (2, 2, 1)."""
+    """Convert a version tag like 'v2.3.2' or '2.3.0-beta.1' into an integer tuple (2, 2, 1)."""
     cleaned = (version_str or "").strip().lstrip("vV")
     numeric_prefix = re.split(r"[-+]", cleaned, maxsplit=1)[0]
     parts: list[int] = []

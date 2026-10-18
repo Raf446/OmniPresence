@@ -2,12 +2,28 @@
   "date": "2026-10-18",
   "totals": {
     "Coding": 79.02,
-    "Media": 1010.38,
+    "Media": 1155.69,
     "Gaming": 0.0,
     "Browsing": 12.26,
-    "Idle": 661.68
+    "Idle": 666.55
   },
   "sessions": [
+    {
+      "category": "Media",
+      "headline": "Titik Nadir (feat. Monita Tahalea) • by Kahitna",
+      "rule_id": "spotify",
+      "started_at": 1792330315.68,
+      "updated_at": 1792330460.78,
+      "duration_seconds": 146.11
+    },
+    {
+      "category": "Idle",
+      "headline": "CPU: 0% • RAM: 11.5 / 14 GB • 24°C • Clear Night",
+      "rule_id": "idle-standby",
+      "started_at": 1792330314.47,
+      "updated_at": 1792330315.48,
+      "duration_seconds": 4.88
+    },
     {
       "category": "Media",
       "headline": "Hati-Hati di Jalan • by Tulus",
@@ -191,22 +207,6 @@
       "started_at": 1792309991.65,
       "updated_at": 1792309992.5,
       "duration_seconds": 1.84
-    },
-    {
-      "category": "Media",
-      "headline": "Bunuh Idolamu • by Hindia",
-      "rule_id": "spotify",
-      "started_at": 1792309981.89,
-      "updated_at": 1792309991.48,
-      "duration_seconds": 10.58
-    },
-    {
-      "category": "Coding",
-      "headline": "Away from Keyboard • Standby • Back Soon",
-      "rule_id": "manual-override",
-      "started_at": 1792309961.45,
-      "updated_at": 1792309980.94,
-      "duration_seconds": 20.49
     }
   ],
   "days": {
@@ -235,14 +235,30 @@
     "2026-10-18": {
       "totals": {
         "Coding": 79.02,
-        "Media": 1010.38,
+        "Media": 1155.69,
         "Gaming": 0.0,
         "Browsing": 12.26,
-        "Idle": 661.68
+        "Idle": 666.55
       },
-      "total_active_seconds": 1101.66,
-      "total_tracked_seconds": 1763.34,
+      "total_active_seconds": 1246.97,
+      "total_tracked_seconds": 1913.53,
       "sessions": [
+        {
+          "category": "Media",
+          "headline": "Titik Nadir (feat. Monita Tahalea) • by Kahitna",
+          "rule_id": "spotify",
+          "started_at": 1792330315.68,
+          "updated_at": 1792330460.78,
+          "duration_seconds": 146.11
+        },
+        {
+          "category": "Idle",
+          "headline": "CPU: 0% • RAM: 11.5 / 14 GB • 24°C • Clear Night",
+          "rule_id": "idle-standby",
+          "started_at": 1792330314.47,
+          "updated_at": 1792330315.48,
+          "duration_seconds": 4.88
+        },
         {
           "category": "Media",
           "headline": "Hati-Hati di Jalan • by Tulus",
@@ -426,25 +442,9 @@
           "started_at": 1792309991.65,
           "updated_at": 1792309992.5,
           "duration_seconds": 1.84
-        },
-        {
-          "category": "Media",
-          "headline": "Bunuh Idolamu • by Hindia",
-          "rule_id": "spotify",
-          "started_at": 1792309981.89,
-          "updated_at": 1792309991.48,
-          "duration_seconds": 10.58
-        },
-        {
-          "category": "Coding",
-          "headline": "Away from Keyboard • Standby • Back Soon",
-          "rule_id": "manual-override",
-          "started_at": 1792309961.45,
-          "updated_at": 1792309980.94,
-          "duration_seconds": 20.49
         }
       ],
-      "updated_at": "2026-10-18T19:56:58"
+      "updated_at": "2026-10-18T20:34:20"
     }
   }
 }

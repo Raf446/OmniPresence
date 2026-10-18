@@ -96,13 +96,12 @@ class IPCManager(QThread):
     presence_sent = Signal(object)
     user_detected = Signal(str, str)
 
-    # Discord allows up to 5 RPC updates per 20s window (~4.5s sustained).
-    # We reserve burst tokens for priority/context switches (0.25s gap) while spacing sustained updates at 4.5s.
+    # Discord allows up to 5 RPC updates per 20s window (1 update per 5.0s sustained).
+    # Aligned with the 5.0s (5000ms) MediaScrobbler polling rhythm so updates flow without queue buildup.
     WINDOW_SECONDS = 20.0
     WINDOW_LIMIT = 4
-    SUSTAINED_GAP_SECONDS = 4.5
+    SUSTAINED_GAP_SECONDS = 5.0
     PRIORITY_SWITCH_GAP = 0.25
-    MEDIA_PLACEHOLDER_SETTLE_GAP = 0.45
     HEARTBEAT_SECONDS = 15.0
     LIVENESS_CHECK_SECONDS = 5.0
     CONNECT_TIMEOUT = 15.0
@@ -112,6 +111,7 @@ class IPCManager(QThread):
         self._client_id = client_id.strip()
         self._lock = threading.Lock()
         self._desired: PresenceData | None = None
+        self._last_pushed: PresenceData | None = None
         self.pending_activity: PresenceData | None = None
         self._has_pending: bool = False
         self._pending_staged_at: float = 0.0
@@ -179,16 +179,14 @@ class IPCManager(QThread):
                 and presence.tier >= 6
             ):
                 return
-            is_new_track = (
-                self.pending_activity is None
-                or presence is None
-                or (presence.details, presence.state) != (self.pending_activity.details, self.pending_activity.state)
-            )
             self._desired = presence
             self.pending_activity = presence
+            if presence == self._last_pushed and not in_cooldown:
+                self._has_pending = False
+                self._pending_staged_at = 0.0
+                return
             self._has_pending = True
-            if is_new_track or self._pending_staged_at <= 0.0:
-                self._pending_staged_at = now
+            self._pending_staged_at = now
         self._poke()
 
     def set_client_id(self, client_id: str) -> None:
@@ -237,6 +235,7 @@ class IPCManager(QThread):
         with self._lock:
             payload = self.pending_activity if self._has_pending else self._desired
             self._desired = payload
+            self._last_pushed = payload
             self._has_pending = False
             self._pending_staged_at = 0.0
             self._cooldown_active = False
@@ -334,7 +333,8 @@ class IPCManager(QThread):
                 raise _ConnectionLost("pipe closed by Discord")
 
             now = time.monotonic()
-            while sent_at and now - sent_at[0] > self.WINDOW_SECONDS:
+            # Evict timestamps older than the 20s window (with 0.2s tolerance for 5.0s QTimer tick alignment)
+            while sent_at and now - sent_at[0] >= (self.WINDOW_SECONDS - 0.20):
                 sent_at.popleft()
 
             due = (
@@ -361,22 +361,8 @@ class IPCManager(QThread):
                     )
                     wait = max(wait, min_gap - (now - sent_at[-1]))
 
-                # When a new P5 Media track starts with a placeholder icon, allow a brief settle window (0.45s)
-                # so the background artwork resolver (or rapid multi-skip) coalesces into a single IPC send.
-                if (
-                    desired is not None
-                    and desired.tier == 5
-                    and (desired.large_image or "") in ("spotify", "applemusic", "music_placeholder")
-                ):
-                    with self._lock:
-                        staged_at = self._pending_staged_at
-                    if staged_at > 0.0:
-                        settle_rem = self.MEDIA_PLACEHOLDER_SETTLE_GAP - (now - staged_at)
-                        if settle_rem > 0.0:
-                            wait = max(wait, settle_rem)
-
                 if len(sent_at) >= self.WINDOW_LIMIT:
-                    wait = max(wait, self.WINDOW_SECONDS - (now - sent_at[0]) + 0.08)
+                    wait = max(wait, (self.WINDOW_SECONDS - 0.15) - (now - sent_at[0]))
 
                 if wait <= 0:
                     payload_to_send = self._consume_pending()

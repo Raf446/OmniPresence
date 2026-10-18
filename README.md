@@ -5,7 +5,7 @@
 
 **Intelligent, Multi-Context Discord Rich Presence Engine for Windows**
 
-[![Version](https://img.shields.io/badge/version-2.3.1-0078D6.svg?style=flat-square)](https://github.com/Raf446/OmniPresence/releases)
+[![Version](https://img.shields.io/badge/version-2.3.2-0078D6.svg?style=flat-square)](https://github.com/Raf446/OmniPresence/releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6.svg?style=flat-square)](#)
 [![Python](https://img.shields.io/badge/python-3.11%2B-3776AB.svg?style=flat-square)](#)
 [![GUI](https://img.shields.io/badge/gui-PySide6%20(Qt6)-41CD52.svg?style=flat-square)](#)
@@ -109,7 +109,7 @@ OmniPresence/
 
 ### Opsi 1: Menggunakan Installer (Rekomendasi Pengguna)
 Cukup unduh installer terbaru di tab **[Releases](https://github.com/Raf446/OmniPresence/releases)**:
-1. Jalankan `OmniPresence-Setup-v2.3.1.exe`.
+1. Jalankan `OmniPresence-Setup-v2.3.2.exe`.
 2. Ikuti wizard instalasi sampai selesai.
 3. Buka OmniPresence dari Desktop atau Start Menu. Aplikasi akan otomatis terhubung ke Discord dan memeriksa pembaruan di latar belakang.
 

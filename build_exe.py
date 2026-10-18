@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "OmniPresence"
-APP_VERSION = "2.3.1"
+APP_VERSION = "2.3.2"
 APP_VERSION_TUPLE = (2, 3, 1, 0)
 APP_PUBLISHER = "Raf446"
 APP_DESCRIPTION = "OmniPresence - Autonomous Multi-Context Discord Rich Presence Engine"

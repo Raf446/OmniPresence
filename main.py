@@ -60,7 +60,7 @@ def _parse_smoke_arg(raw: str) -> float:
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="OmniPresence Discord Rich Presence Engine v2.3.1")
+    parser = argparse.ArgumentParser(description="OmniPresence Discord Rich Presence Engine v2.3.2")
     parser.add_argument("--minimized", action="store_true", help="Start hidden in the system tray")
     parser.add_argument("--client-id", type=str, default="", help="Override Discord Application ID")
     parser.add_argument(
@@ -77,7 +77,7 @@ def main(argv: list[str] | None = None) -> int:
 
     app = QApplication(sys.argv)
     app.setApplicationName("OmniPresence")
-    app.setApplicationVersion("2.3.1")
+    app.setApplicationVersion("2.3.2")
     app.setOrganizationName("Raf446")
     app.setQuitOnLastWindowClosed(False)
     app.setWindowIcon(app_icon("disconnected"))
@@ -108,7 +108,7 @@ def main(argv: list[str] | None = None) -> int:
 
     state = StateManager(settings, rules_path, rulebook, rule_error, privacy_shield=PRIVACY_SHIELD)
     state.settings_updated.connect(lambda s: _sync_autostart(s.auto_start, script_file))
-    state.log("info", "boot", f"OmniPresence v2.3.1 initialized ({len(rulebook.rules)} rules loaded)")
+    state.log("info", "boot", f"OmniPresence v2.3.2 initialized ({len(rulebook.rules)} rules loaded)")
     if rule_error:
         state.log("error", "rules", rule_error)
 

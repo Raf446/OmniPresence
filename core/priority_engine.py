@@ -1094,7 +1094,7 @@ class PriorityEngine:
 
             details_text = f"CPU: {cpu_pct}% \u2022 RAM: {ram_used:.1f} / {ram_total:.0f} GB"
             small_image = "cpu_chip" if cpu_pct >= 50 else "ram_chip"
-            small_text = "OmniPresence v2.3.1"
+            small_text = "OmniPresence v2.3.2"
 
             live_settings = SETTINGS_MANAGER.settings
             show_city = (

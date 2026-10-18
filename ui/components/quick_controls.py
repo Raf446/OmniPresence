@@ -1,4 +1,4 @@
-"""Action bar for P1 Manual Override, Segmented Mode Selector, Pause IPC, and Reload Rules (Obsidian Glass v2.3.1)."""
+"""Action bar for P1 Manual Override, Segmented Mode Selector, Pause IPC, and Reload Rules (Obsidian Glass v2.3.2)."""
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
