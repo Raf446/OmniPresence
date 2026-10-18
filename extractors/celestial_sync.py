@@ -175,7 +175,7 @@ def _reverse_geocode_city(lat: float, lon: float, timeout: float = 2.5) -> str:
         f"?latitude={lat:.4f}&longitude={lon:.4f}&localityLanguage=id"
     )
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "OmniPresence/2.2.0"})
+        req = urllib.request.Request(url, headers={"User-Agent": "OmniPresence/2.3.0"})
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read(32768).decode("utf-8", errors="replace"))
         city = (
@@ -233,7 +233,7 @@ def _try_windows_geolocation(timeout: float = 3.0) -> LocationInfo | None:
     except Exception:
         pass
 
-    # 1C: Try .NET System.Device.Location.GeoCoordinateWatcher via hidden PowerShell probe (fast 2.2s timeout)
+    # 1C: Try .NET System.Device.Location.GeoCoordinateWatcher via hidden PowerShell probe (fast 2.3s timeout)
     try:
         ps_cmd = (
             "Add-Type -AssemblyName System.Device; "
@@ -273,7 +273,7 @@ def _try_passive_ip_geolocation(timeout: float = 2.8) -> LocationInfo | None:
     )
     for url, kind in endpoints:
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "OmniPresence/2.2.0"})
+            req = urllib.request.Request(url, headers={"User-Agent": "OmniPresence/2.3.0"})
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 data = json.loads(resp.read(32768).decode("utf-8", errors="replace"))
             if kind == "ip-api":
@@ -306,7 +306,7 @@ def geocode_city(query: str, timeout: float = HTTP_TIMEOUT_SECONDS) -> LocationI
         return None
     encoded = urllib.parse.quote(cleaned)
     url = f"https://geocoding-api.open-meteo.com/v1/search?name={encoded}&count=1&language=id&format=json"
-    req = urllib.request.Request(url, headers={"User-Agent": "OmniPresence/2.2.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "OmniPresence/2.3.0"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         payload = json.loads(resp.read(32768).decode("utf-8", errors="replace"))
     results = payload.get("results") or []
@@ -434,7 +434,7 @@ def fetch_weather(
         f"&current=temperature_2m,relative_humidity_2m,weather_code,is_day"
         f"&timezone=auto"
     )
-    req = urllib.request.Request(url, headers={"User-Agent": "OmniPresence/2.2.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "OmniPresence/2.3.0"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         payload = json.loads(resp.read(32768).decode("utf-8", errors="replace"))
 

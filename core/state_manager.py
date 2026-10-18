@@ -20,13 +20,13 @@ from core.priority_engine import (
     RuleError,
 )
 from core.privacy_shield import PRIVACY_SHIELD, PrivacyShield
-from core.settings_manager import CLIENT_ID_ENV, SETTINGS_MANAGER, Settings
+from core.settings_manager import CLIENT_ID_ENV, DEFAULT_CLIENT_ID, SETTINGS_MANAGER, Settings
 from extractors.celestial_sync import CELESTIAL_SYNC
 from extractors.github_resolver import GITHUB_AVATAR_RESOLVER
 from extractors.mood_engine import MOOD_ENGINE
 from extractors.youtube_resolver import YOUTUBE_THUMBNAIL_RESOLVER
 
-__all__ = ["CLIENT_ID_ENV", "LogEntry", "Settings", "StateManager"]
+__all__ = ["CLIENT_ID_ENV", "DEFAULT_CLIENT_ID", "LogEntry", "Settings", "StateManager"]
 
 
 @dataclass(frozen=True)
@@ -285,8 +285,9 @@ class StateManager(QObject):
                 return False
             self.client_id_changed.emit(custom_app_id)
         elif not enabled and self._manual is not None and self._manual.app_id.strip():
-            if self.settings.discord_client_id:
-                self.client_id_changed.emit(self.settings.discord_client_id)
+            active_id = self.settings.get_active_client_id()
+            if active_id:
+                self.client_id_changed.emit(active_id)
 
         was_active = self._manual is not None
         self._manual = config if enabled else None
@@ -336,15 +337,38 @@ class StateManager(QObject):
         self._apply_rulebook(self.rulebook.with_enabled(rule_id, enabled))
         self.log("info", "rules", f"rule '{rule_id}' {'enabled' if enabled else 'disabled'}")
 
+    def configure_gateway(self, use_custom: bool, custom_id: str = "") -> bool:
+        """Configure Central Gateway vs Custom Application ID and reconnect IPC."""
+        cleaned = custom_id.strip()
+        if use_custom:
+            if not cleaned.isdigit():
+                self.log("error", "gateway", "Custom Application ID must contain digits only")
+                return False
+            self.update_settings(
+                use_custom_client_id=True,
+                custom_client_id=cleaned,
+                client_id=cleaned,
+                discord_client_id=cleaned,
+            )
+            active_id = self.settings.get_active_client_id()
+            self.log("info", "gateway", f"Switched to Custom Application ID ({active_id})")
+        else:
+            self.update_settings(
+                use_custom_client_id=False,
+                custom_client_id=cleaned or self.settings.custom_client_id,
+                client_id=DEFAULT_CLIENT_ID,
+                discord_client_id=DEFAULT_CLIENT_ID,
+            )
+            active_id = self.settings.get_active_client_id()
+            self.log("info", "gateway", f"Connected via Official OmniPresence Gateway ({active_id})")
+        self.client_id_changed.emit(active_id)
+        return True
+
     def set_client_id(self, client_id: str) -> bool:
         client_id = client_id.strip()
-        if not client_id.isdigit():
-            self.log("error", "settings", "Application ID must contain digits only")
-            return False
-        self.update_settings(discord_client_id=client_id)
-        self.log("info", "settings", "Application ID saved")
-        self.client_id_changed.emit(client_id)
-        return True
+        if not client_id or client_id == DEFAULT_CLIENT_ID:
+            return self.configure_gateway(False, self.settings.custom_client_id)
+        return self.configure_gateway(True, client_id)
 
     def _apply_rulebook(self, book: RuleBook) -> None:
         self.rulebook = book

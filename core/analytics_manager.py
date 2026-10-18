@@ -1,4 +1,4 @@
-"""Lightweight Daily Activity & Category Analytics Engine for OmniPresence v2.2.0.
+"""Lightweight Daily Activity & Category Analytics Engine for OmniPresence v2.3.0.
 
 Tracks accumulated time across 5 core categories (Coding, Media, Gaming, Browsing, Idle)
 and recent session timeline entries, persisting to data/analytics.json.

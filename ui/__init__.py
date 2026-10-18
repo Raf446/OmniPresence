@@ -18,16 +18,16 @@ from PySide6.QtGui import (
     QRadialGradient,
 )
 
-# Obsidian Glass v2.2.0 layered palette
-BG = "#0B0D13"
-SURFACE = "#171B28"
-SURFACE_RAISED = "#202638"
-BORDER = "rgba(255, 255, 255, 0.07)"
-BORDER_STRONG = "rgba(56, 189, 248, 0.35)"
+# Obsidian Glass v2.3.0 layered palette
+BG = "#0D1117"
+SURFACE = "#161B22"
+SURFACE_RAISED = "#1A212C"
+BORDER = "rgba(255, 255, 255, 0.08)"
+BORDER_STRONG = "rgba(0, 229, 255, 0.40)"
 TEXT = "#F8FAFC"
 MUTED = "#94A3B8"
 DIM = "#64748B"
-ACCENT = "#38BDF8"
+ACCENT = "#00E5FF"
 SUCCESS = "#10B981"
 WARN = "#F59E0B"
 DANGER = "#EF4444"
@@ -45,16 +45,16 @@ TIER_COLORS: dict[int, str] = {
     1: "#EF4444",  # P1 Manual Override / Stealth Shield (Crimson Red)
     2: "#F59E0B",  # P2 Compiler Active (Amber Orange + pulse)
     3: "#10B981",  # P3 Gaming Mode (Emerald Green)
-    4: "#38BDF8",  # P4 IDE / Git Context (Cyan / Sapphire Blue)
+    4: "#00E5FF",  # P4 IDE / Git Control (Cyan / Sapphire Blue)
     5: "#A855F7",  # P5 Media / Music Playing (Violet Purple)
-    6: "#64748B",  # P6 Idle / AFK (Muted Slate)
+    6: "#64748B",  # P6 Idle / Celestial (Muted Slate)
 }
 
 TIER_TITLES: dict[int, str] = {
     1: "Manual / Shield",
     2: "Compiler Active",
     3: "Gaming Mode",
-    4: "IDE / Git Context",
+    4: "IDE / Git Control",
     5: "Media Playing",
     6: "Idle / Celestial",
 }

@@ -1,6 +1,7 @@
-"""Frameless Obsidian Glass main window (v2.2) with 220px Sidebar + 4-page QStackedWidget."""
+"""Frameless Obsidian Glass main window (v2.3.0) with Collapsible Sidebar + 5-page AnimatedStackedWidget."""
 from __future__ import annotations
 
+import html
 import math
 from datetime import datetime
 
@@ -13,14 +14,19 @@ from PySide6.QtCore import (
     QRectF,
     Qt,
     QTimer,
+    QUrl,
     Signal,
 )
 from PySide6.QtGui import (
     QColor,
+    QDesktopServices,
     QFont,
     QLinearGradient,
     QMouseEvent,
     QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
     QRadialGradient,
     QTextCursor,
 )
@@ -33,12 +39,14 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
-    QPlainTextEdit,
+    QProgressBar,
     QPushButton,
     QRadioButton,
     QScrollArea,
+    QSizePolicy,
     QSpinBox,
     QStackedWidget,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -52,6 +60,8 @@ from core.analytics_manager import (
     format_analytics_duration,
 )
 from core.priority_engine import Resolution, Tier
+from core.settings_manager import DEFAULT_CLIENT_ID
+from core.updater import CURRENT_VERSION, UpdateCheckerThread, apply_update_and_restart
 from core.state_manager import LogEntry, StateManager
 from extractors.celestial_sync import CELESTIAL_SYNC
 from extractors.telemetry import TelemetrySample
@@ -79,11 +89,11 @@ from ui.components import (
 
 
 class StatusDot(QWidget):
-    """Pulsating glowing status indicator dot inside the custom titlebar and sidebar footer."""
+    """Pulsating glowing status indicator dot inside the sidebar footer and tier matrix."""
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setFixedSize(16, 16)
+        self.setFixedSize(14, 14)
         self._status = "disconnected"
         self._color = QColor(STATUS_COLORS["disconnected"])
         self._phase = 0.0
@@ -102,6 +112,11 @@ class StatusDot(QWidget):
         self._color = QColor(STATUS_COLORS.get(self._status, DANGER))
         self.update()
 
+    def set_custom_color(self, hex_color: str, active: bool = True) -> None:
+        self._status = "connected" if active else "disconnected"
+        self._color = QColor(hex_color)
+        self.update()
+
     def paintEvent(self, _event) -> None:  # noqa: N802
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -111,11 +126,11 @@ class StatusDot(QWidget):
         pulse = 0.5 + 0.5 * math.sin(self._phase)
 
         if self._status in ("connected", "connecting", "reconnecting"):
-            radius = 5.5 + 2.3 * pulse
+            radius = 5.0 + 2.0 * pulse
             alpha = int(95 + 95 * pulse)
         else:
-            radius = 5.5
-            alpha = 65
+            radius = 4.5
+            alpha = 55
 
         glow = QRadialGradient(center, radius)
         c_inner = QColor(self._color)
@@ -128,11 +143,11 @@ class StatusDot(QWidget):
         painter.drawEllipse(center, radius, radius)
 
         painter.setBrush(self._color)
-        painter.drawEllipse(center, 3.6, 3.6)
+        painter.drawEllipse(center, 3.3, 3.3)
 
 
 class TelemetryBar(QWidget):
-    """Compact visual micro-meter for CPU or RAM load with smooth fill and dynamic threshold color."""
+    """Compact visual micro-meter for CPU or RAM load with slim glowing progress bar (5px) beside metric text."""
 
     def __init__(self, label: str, base_color: str = ACCENT, parent=None) -> None:
         super().__init__(parent)
@@ -141,7 +156,7 @@ class TelemetryBar(QWidget):
         self._percent = 0.0
         self._display_percent = 0.0
         self._detail = "--%"
-        self.setFixedSize(138, 22)
+        self.setFixedSize(156, 22)
 
     def set_metric(self, percent: float, detail: str) -> None:
         self._percent = min(max(percent, 0.0), 100.0)
@@ -161,30 +176,35 @@ class TelemetryBar(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        painter.setFont(mono_font(10, QFont.Weight.DemiBold))
-        painter.setPen(QColor("#94A3B8"))
-        painter.drawText(QRectF(0, 0, 34, 13), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self._label)
+        painter.setFont(mono_font(10, QFont.Weight.Bold))
+        painter.setPen(QColor("#8B949E"))
+        painter.drawText(QRectF(0, 0, 30, 22), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self._label)
 
-        painter.setPen(QColor("#F8FAFC"))
-        painter.drawText(
-            QRectF(34, 0, self.width() - 34, 13),
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-            self._detail,
-        )
-
-        bar_rect = QRectF(0, 15, self.width(), 5)
+        bar_x = 32.0
+        bar_w = 54.0
+        bar_y = 8.5
+        bar_h = 5.0
+        bar_rect = QRectF(bar_x, bar_y, bar_w, bar_h)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(255, 255, 255, 22))
+        painter.setBrush(QColor(255, 255, 255, 24))
         painter.drawRoundedRect(bar_rect, 2.5, 2.5)
 
-        fill_w = self.width() * (self._display_percent / 100.0)
+        fill_w = bar_w * (self._display_percent / 100.0)
         if fill_w > 1.0:
             col = self._active_color()
-            grad = QLinearGradient(0, 0, fill_w, 0)
-            grad.setColorAt(0.0, col.darker(115))
-            grad.setColorAt(1.0, col.lighter(120))
+            grad = QLinearGradient(bar_x, 0, bar_x + fill_w, 0)
+            grad.setColorAt(0.0, col)
+            grad.setColorAt(1.0, QColor("#A855F7") if self._label == "CPU" else col.lighter(125))
             painter.setBrush(grad)
-            painter.drawRoundedRect(QRectF(0, 15, max(4.0, fill_w), 5), 2.5, 2.5)
+            painter.drawRoundedRect(QRectF(bar_x, bar_y, max(4.0, fill_w), bar_h), 2.5, 2.5)
+
+        painter.setFont(mono_font(10, QFont.Weight.DemiBold))
+        painter.setPen(QColor("#F8FAFC"))
+        painter.drawText(
+            QRectF(bar_x + bar_w + 6, 0, self.width() - (bar_x + bar_w + 6), 22),
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+            self._detail,
+        )
 
 
 class CustomTitleBar(QFrame):
@@ -199,76 +219,59 @@ class CustomTitleBar(QFrame):
         self.setFixedHeight(44)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(14, 0, 10, 0)
+        layout.setContentsMargins(16, 0, 10, 0)
         layout.setSpacing(10)
 
         brand = QLabel(app_name, objectName="TitleBrand")
         brand.setFont(ui_font(13, QFont.Weight.Bold))
         layout.addWidget(brand)
 
-        ver = QLabel("v2.2", objectName="TitleVersionBadge")
+        ver = QLabel("v2.3.0", objectName="TitleVersionBadge")
         ver.setFont(mono_font(10, QFont.Weight.DemiBold))
         layout.addWidget(ver)
-
-        self._pill = QFrame(objectName="StatusPill")
-        self._pill.setProperty("status", "disconnected")
-        pill_layout = QHBoxLayout(self._pill)
-        pill_layout.setContentsMargins(8, 2, 10, 2)
-        pill_layout.setSpacing(6)
-        self._dot = StatusDot(self._pill)
-        self._status_text = QLabel("IPC Disconnected", objectName="StatusText")
-        self._status_text.setFont(mono_font(11, QFont.Weight.DemiBold))
-        pill_layout.addWidget(self._dot)
-        pill_layout.addWidget(self._status_text)
-        layout.addWidget(self._pill)
 
         layout.addStretch(1)
 
         telemetry_cluster = QFrame(objectName="TelemetryCluster")
         tc_layout = QHBoxLayout(telemetry_cluster)
         tc_layout.setContentsMargins(10, 3, 10, 3)
-        tc_layout.setSpacing(14)
-        self._cpu_bar = TelemetryBar("CPU", "#38BDF8", telemetry_cluster)
+        tc_layout.setSpacing(12)
+        self._cpu_bar = TelemetryBar("CPU", "#00E5FF", telemetry_cluster)
         self._ram_bar = TelemetryBar("RAM", "#A855F7", telemetry_cluster)
         tc_layout.addWidget(self._cpu_bar)
         tc_layout.addWidget(self._ram_bar)
         layout.addWidget(telemetry_cluster)
 
-        min_btn = QPushButton("\u2013", objectName="TitleButton")
-        min_btn.setFont(mono_font(12, QFont.Weight.Bold))
+        min_btn = QPushButton("\u2014", objectName="TitleButton")
+        min_btn.setFont(mono_font(11, QFont.Weight.Bold))
         min_btn.setToolTip("Minimize")
         min_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         min_btn.clicked.connect(self.minimize_clicked.emit)
         layout.addWidget(min_btn)
 
-        max_btn = QPushButton("\u25a1", objectName="TitleButton")
+        max_btn = QPushButton("\u25a2", objectName="TitleButton")
         max_btn.setFont(mono_font(11))
         max_btn.setToolTip("Maximize / Restore")
         max_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         max_btn.clicked.connect(self.maximize_clicked.emit)
         layout.addWidget(max_btn)
 
-        close_btn = QPushButton("\u00d7", objectName="TitleCloseButton")
-        close_btn.setFont(mono_font(14, QFont.Weight.Bold))
+        close_btn = QPushButton("\u2715", objectName="TitleCloseButton")
+        close_btn.setFont(mono_font(11, QFont.Weight.Bold))
         close_btn.setToolTip("Hide to system tray (or close)")
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         close_btn.clicked.connect(self.close_clicked.emit)
         layout.addWidget(close_btn)
 
     def set_connection(self, status: str, detail: str) -> None:
-        norm = status.lower()
-        self._dot.set_status(norm)
-        self._pill.setProperty("status", norm)
-        self._pill.style().unpolish(self._pill)
-        self._pill.style().polish(self._pill)
-        label = detail or f"IPC {status.capitalize()}"
-        self._status_text.setText(label)
+        # Connection status is centralized in SidebarFooter to prevent topbar visual redundancy
+        pass
 
     def set_telemetry(self, sample: TelemetrySample) -> None:
         self._cpu_bar.set_metric(sample.cpu_percent, f"{sample.cpu_percent:4.1f}%")
         self._ram_bar.set_metric(
             sample.ram_percent,
-            f"{sample.ram_used_gb:.1f}/{sample.ram_total_gb:.0f}G ({sample.ram_percent:.0f}%)",
+            f"{sample.ram_used_gb:.1f}/{sample.ram_total_gb:.0f}G",
         )
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
@@ -296,7 +299,16 @@ class CustomTitleBar(QFrame):
 
 
 class TierStatusGrid(QFrame):
-    """Interactive 2x3 Priority Tier Status Grid + Live Feature Telemetry HUD on Page 0 (Overview)."""
+    """Dynamic Priority Tier Matrix (2 columns x 3 rows) with anti-clipping and pulsating status dots."""
+
+    MATRIX_LABELS: dict[int, str] = {
+        1: "P1 Manual / Shield",
+        2: "P2 Compiler Active",
+        3: "P3 Gaming Mode",
+        4: "P4 IDE / Git Control",
+        5: "P5 Media Playing",
+        6: "P6 Idle / Celestial",
+    }
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent, objectName="HudCard")
@@ -305,7 +317,7 @@ class TierStatusGrid(QFrame):
         root.setSpacing(10)
 
         header = QHBoxLayout()
-        title = QLabel("Priority Tier Matrix & Autonomous Engines", objectName="SectionHeading")
+        title = QLabel("Dynamic Priority Tier Matrix", objectName="SectionHeading")
         title.setFont(ui_font(12, QFont.Weight.Bold))
         header.addWidget(title)
         header.addStretch(1)
@@ -320,37 +332,42 @@ class TierStatusGrid(QFrame):
 
         root.addLayout(header)
 
+        # 2 Columns x 3 Rows Grid Layout:
+        # Row 0: P1 Manual / Shield  | P2 Compiler Active
+        # Row 1: P3 Gaming Mode      | P4 IDE / Git Control
+        # Row 2: P5 Media Playing    | P6 Idle / Celestial
         grid = QGridLayout()
-        grid.setHorizontalSpacing(8)
+        grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(8)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
 
-        self._tier_pills: dict[int, tuple[QFrame, QLabel]] = {}
+        self._tier_pills: dict[int, tuple[QFrame, StatusDot, QLabel]] = {}
         for idx, tier_num in enumerate(range(1, 7)):
             card = QFrame(self)
             card.setObjectName("DiscordBox")
+            card.setMinimumWidth(150)
+            card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
             c_layout = QHBoxLayout(card)
-            c_layout.setContentsMargins(10, 7, 10, 7)
+            c_layout.setContentsMargins(12, 8, 12, 8)
             c_layout.setSpacing(8)
 
-            badge = QLabel(f"P{tier_num}")
-            badge.setFont(mono_font(10, QFont.Weight.Bold))
-            col_hex = TIER_COLORS[tier_num]
-            badge.setStyleSheet(
-                f"background-color: {col_hex}26; color: {col_hex}; border: 1px solid {col_hex}66; "
-                "border-radius: 6px; padding: 2px 6px;"
-            )
-            c_layout.addWidget(badge)
+            dot = StatusDot(card)
+            dot.set_custom_color("#64748B", active=False)
+            c_layout.addWidget(dot, 0, Qt.AlignmentFlag.AlignVCenter)
 
-            name_lbl = QLabel(TIER_TITLES[tier_num])
+            name_lbl = QLabel(self.MATRIX_LABELS[tier_num])
             name_lbl.setFont(ui_font(11, QFont.Weight.DemiBold))
+            name_lbl.setMinimumWidth(115)
+            name_lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
             c_layout.addWidget(name_lbl, 1)
 
             state_lbl = QLabel("IDLE", objectName="SectionCaption")
             state_lbl.setFont(mono_font(10, QFont.Weight.Bold))
-            c_layout.addWidget(state_lbl)
+            c_layout.addWidget(state_lbl, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
-            self._tier_pills[tier_num] = (card, state_lbl)
-            grid.addWidget(card, idx // 3, idx % 3)
+            self._tier_pills[tier_num] = (card, dot, state_lbl)
+            grid.addWidget(card, idx // 2, idx % 2)
 
         root.addLayout(grid)
         self.refresh_celestial()
@@ -372,64 +389,116 @@ class TierStatusGrid(QFrame):
         active_tier = int(resolution.tier) if (resolution and resolution.tier is not None) else None
         live_set = {int(t) for t in resolution.live_tiers} if resolution else set()
 
-        for tier_num, (card, state_lbl) in self._tier_pills.items():
+        for tier_num, (card, dot, state_lbl) in self._tier_pills.items():
             col_hex = TIER_COLORS[tier_num]
             if tier_num == active_tier:
-                state_lbl.setText("ACTIVE")
-                state_lbl.setStyleSheet(f"color: {col_hex};")
+                dot.set_custom_color("#10B981" if tier_num != 1 else col_hex, active=True)
+                state_lbl.setText("[ACTIVE]")
+                state_lbl.setStyleSheet(
+                    f"background-color: {col_hex}26; color: {col_hex}; border: 1px solid {col_hex}80; "
+                    "border-radius: 5px; padding: 1px 6px;"
+                )
                 card.setStyleSheet(
-                    f"QFrame#DiscordBox {{ background-color: {col_hex}18; border: 1px solid {col_hex}88; border-radius: 10px; }}"
+                    f"QFrame#DiscordBox {{ background-color: {col_hex}18; border: 1px solid {col_hex}88; border-radius: 12px; }}"
                 )
             elif tier_num in live_set:
+                dot.set_custom_color(col_hex, active=True)
                 state_lbl.setText("READY")
-                state_lbl.setStyleSheet("color: #E2E8F0;")
+                state_lbl.setStyleSheet("color: #E2E8F0; padding: 1px 4px;")
                 card.setStyleSheet("")
             else:
+                dot.set_custom_color("#64748B", active=False)
                 state_lbl.setText("IDLE")
-                state_lbl.setStyleSheet("color: #64748B;")
+                state_lbl.setStyleSheet("color: rgba(148, 163, 184, 0.55); padding: 1px 4px;")
                 card.setStyleSheet("")
 
 
 class ActivityLogPanel(QFrame):
-    """Compact bottom console displaying real-time context triggers and IPC events."""
+    """Modern Card-Stream Console displaying real-time context triggers, contextual icons, and IPC events."""
+
+    SOURCE_ICONS: dict[str, tuple[str, str]] = {
+        "media": ("\U0001f3b5 Spotify", "#A855F7"),
+        "spotify": ("\U0001f3b5 Spotify", "#10B981"),
+        "youtube": ("\u25b6 YouTube", "#EF4444"),
+        "github": ("\U0001f4bb GitHub", "#79C0FF"),
+        "ipc": ("\U0001f50c IPC", "#00E5FF"),
+        "gateway": ("\U0001f310 Gateway", "#34D399"),
+        "compiler": ("\u2699\ufe0f Compiler", "#F59E0B"),
+        "shield": ("\U0001f6e1\ufe0f Shield", "#EF4444"),
+        "mood": ("\U0001f3a8 Mood", "#A855F7"),
+        "celestial": ("\U0001f319 Celestial", "#38BDF8"),
+        "rules": ("\u2630 Rules", "#79C0FF"),
+        "boot": ("\u2728 Boot", "#10B981"),
+    }
 
     def __init__(self, capacity: int = 500, parent=None) -> None:
         super().__init__(parent, objectName="LogPanel")
         self._capacity = capacity
+        self._line_count = 0
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 8, 12, 10)
+        layout.setContentsMargins(14, 10, 14, 12)
         layout.setSpacing(6)
 
         header = QHBoxLayout()
         title = QLabel("Activity & Trigger Console", objectName="SectionHeading")
-        title.setFont(ui_font(12, QFont.Weight.DemiBold))
+        title.setFont(ui_font(12, QFont.Weight.Bold))
         header.addWidget(title)
         header.addStretch(1)
 
         clear_btn = QPushButton("Clear Log")
-        clear_btn.setFont(ui_font(11))
+        clear_btn.setFont(ui_font(11, QFont.Weight.DemiBold))
         clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         header.addWidget(clear_btn)
         layout.addLayout(header)
 
-        self._console = QPlainTextEdit(objectName="ActivityLogView")
+        self._console = QTextEdit(objectName="ActivityLogView")
         self._console.setReadOnly(True)
-        self._console.setMaximumBlockCount(capacity)
         self._console.setFont(mono_font(11))
         self._console.setMinimumHeight(135)
-        clear_btn.clicked.connect(self._console.clear)
+        clear_btn.clicked.connect(self._on_clear)
         layout.addWidget(self._console, 1)
 
+    def _on_clear(self) -> None:
+        self._console.clear()
+        self._line_count = 0
+
     def append_entry(self, entry: LogEntry) -> None:
+        if self._line_count >= self._capacity:
+            self._console.clear()
+            self._line_count = 0
+        self._line_count += 1
+
         stamp = datetime.fromtimestamp(entry.timestamp).strftime("%H:%M:%S")
-        tag = f"[{entry.level.upper():7}] [{entry.source:9}]"
-        self._console.appendPlainText(f"{stamp} {tag} {entry.text}")
+        src_lower = entry.source.lower()
+        tag_label, tag_col = self.SOURCE_ICONS.get(src_lower, (f"\u26a1 {entry.source}", "#79C0FF"))
+
+        lvl = entry.level.lower()
+        if lvl == "error":
+            msg_col = "#FCA5A5"
+        elif lvl == "warn":
+            msg_col = "#FDE68A"
+        elif lvl == "trigger":
+            msg_col = "#E2E8F0"
+            tag_col = "#00E5FF"
+        else:
+            msg_col = "#C9D1D9"
+
+        safe_text = html.escape(entry.text)
+        safe_tag = html.escape(f"[{tag_label}]")
+        line_html = (
+            f'<div style="margin-bottom: 3px;">'
+            f'<span style="color: #6E7681;">{stamp}</span> '
+            f'<span style="color: {tag_col}; font-weight: 600;">{safe_tag}</span> '
+            f'<span style="color: {msg_col};">{safe_text}</span>'
+            f"</div>"
+        )
+        self._console.append(line_html)
         self._console.moveCursor(QTextCursor.MoveOperation.End)
 
 
 class SettingsPage(QScrollArea):
-    """Page 3 (Settings): Interactive SettingsCard deck for the 3 v2.2 innovations + General Preferences."""
+    """Page 4 (Settings): Discord Gateway Configuration + 3 v2.3.0 Innovations + General Preferences."""
 
     def __init__(self, state: StateManager, parent=None) -> None:
         super().__init__(parent, objectName="SettingsScrollArea")
@@ -443,6 +512,56 @@ class SettingsPage(QScrollArea):
         layout.setSpacing(14)
 
         s = state.settings
+
+        # Card 0: Discord Gateway Configuration (Central Gateway Architecture)
+        self._gateway_card = SettingsCard(
+            "\U0001f310 Discord Gateway Configuration",
+            "Connects automatically via the Official OmniPresence Application ID Gateway out-of-the-box, or switch to a custom Developer Portal Application ID.",
+            has_toggle=False,
+            checked=True,
+            badge_text="Central Gateway",
+            parent=content,
+        )
+
+        self._gateway_status_badge = QLabel("", objectName="GatewayBadge")
+        self._gateway_status_badge.setFont(mono_font(11, QFont.Weight.DemiBold))
+        self._gateway_card.add_row(
+            "Active Gateway Mode",
+            self._gateway_status_badge,
+            f"Official Default Application ID: {DEFAULT_CLIENT_ID}",
+        )
+
+        self._use_custom_id_switch = ToggleSwitch(checked=getattr(s, "use_custom_client_id", False))
+        self._use_custom_id_switch.toggled.connect(self._on_custom_gateway_toggled)
+        self._gateway_card.add_row(
+            "Use Custom Application ID",
+            self._use_custom_id_switch,
+            "OFF = Official OmniPresence Gateway (Recommended) • ON = Custom Discord App ID",
+        )
+
+        id_box = QWidget()
+        id_layout = QHBoxLayout(id_box)
+        id_layout.setContentsMargins(0, 0, 0, 0)
+        id_layout.setSpacing(8)
+        initial_display_id = (
+            s.custom_client_id.strip()
+            if (getattr(s, "use_custom_client_id", False) and getattr(s, "custom_client_id", "").strip())
+            else DEFAULT_CLIENT_ID
+        )
+        self._client_id_edit = QLineEdit(initial_display_id)
+        self._client_id_edit.setFont(mono_font(11))
+        self._client_id_edit.setMinimumWidth(220)
+        self._client_id_edit.setPlaceholderText("Enter 18-19 digit Custom Application ID")
+        self._apply_gateway_btn = QPushButton("Apply & Reconnect", objectName="PrimaryButton")
+        self._apply_gateway_btn.setFont(ui_font(11, QFont.Weight.Bold))
+        self._apply_gateway_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._apply_gateway_btn.clicked.connect(self._on_apply_gateway_clicked)
+        id_layout.addWidget(self._client_id_edit, 1)
+        id_layout.addWidget(self._apply_gateway_btn)
+        self._gateway_card.add_row("Application ID", id_box)
+
+        self._refresh_gateway_ui(getattr(s, "use_custom_client_id", False), getattr(s, "custom_client_id", ""))
+        layout.addWidget(self._gateway_card)
 
         # Card 1: Anti-AFK Privacy Shield & Biometric Lock
         self._shield_card = SettingsCard(
@@ -709,27 +828,12 @@ class SettingsPage(QScrollArea):
         # Card 4: General App Preferences
         self._general_card = SettingsCard(
             "\u2699\ufe0f General Application Preferences",
-            "Configure Discord Application ID, profile card identity overrides, Windows startup, and system tray behavior.",
+            "Configure profile card identity overrides, Windows startup, and system tray behavior.",
             has_toggle=False,
             checked=True,
             badge_text="Core Engine",
             parent=content,
         )
-
-        id_box = QWidget()
-        id_layout = QHBoxLayout(id_box)
-        id_layout.setContentsMargins(0, 0, 0, 0)
-        id_layout.setSpacing(6)
-        self._client_id_edit = QLineEdit(s.discord_client_id)
-        self._client_id_edit.setFont(mono_font(11))
-        self._client_id_edit.setMinimumWidth(210)
-        save_id_btn = QPushButton("Save App ID", objectName="PrimaryButton")
-        save_id_btn.setFont(ui_font(11, QFont.Weight.DemiBold))
-        save_id_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        save_id_btn.clicked.connect(lambda: self._state.set_client_id(self._client_id_edit.text()))
-        id_layout.addWidget(self._client_id_edit)
-        id_layout.addWidget(save_id_btn)
-        self._general_card.add_row("Discord Application ID", id_box)
 
         prof_box = QWidget()
         prof_layout = QHBoxLayout(prof_box)
@@ -763,6 +867,44 @@ class SettingsPage(QScrollArea):
         layout.addStretch(1)
 
         self.setWidget(content)
+
+    def _refresh_gateway_ui(self, use_custom: bool, custom_id: str) -> None:
+        use_custom = bool(use_custom)
+        cleaned_custom = (custom_id or "").strip()
+        if use_custom:
+            self._gateway_status_badge.setText("[\u26a1] Custom Application ID Active")
+            self._gateway_status_badge.setProperty("official", "false")
+            self._client_id_edit.setEnabled(True)
+            self._client_id_edit.setReadOnly(False)
+            self._apply_gateway_btn.setEnabled(True)
+            if cleaned_custom and self._client_id_edit.text() == DEFAULT_CLIENT_ID:
+                self._client_id_edit.setText(cleaned_custom)
+            elif not cleaned_custom and self._client_id_edit.text() == DEFAULT_CLIENT_ID:
+                self._client_id_edit.clear()
+        else:
+            self._gateway_status_badge.setText("[\u2713] Connected via Official OmniPresence Gateway")
+            self._gateway_status_badge.setProperty("official", "true")
+            self._client_id_edit.setText(DEFAULT_CLIENT_ID)
+            self._client_id_edit.setReadOnly(True)
+            self._client_id_edit.setEnabled(False)
+            self._apply_gateway_btn.setEnabled(False)
+        self._gateway_status_badge.style().unpolish(self._gateway_status_badge)
+        self._gateway_status_badge.style().polish(self._gateway_status_badge)
+
+    def _on_custom_gateway_toggled(self, checked: bool) -> None:
+        custom_val = self._state.settings.custom_client_id
+        self._refresh_gateway_ui(checked, custom_val)
+        if not checked:
+            self._state.configure_gateway(False, custom_val)
+        elif custom_val.strip().isdigit():
+            self._state.configure_gateway(True, custom_val.strip())
+
+    def _on_apply_gateway_clicked(self) -> None:
+        raw_id = self._client_id_edit.text().strip()
+        if self._use_custom_id_switch.isChecked():
+            self._state.configure_gateway(True, raw_id)
+        else:
+            self._state.configure_gateway(False, self._state.settings.custom_client_id)
 
     def _on_reset_idle_icon_clicked(self) -> None:
         self._idle_icon_edit.clear()
@@ -853,8 +995,13 @@ class SettingsPage(QScrollArea):
         self._tray_switch.blockSignals(True)
         self._tray_switch.setChecked(s.tray_minimized, animate=False)
         self._tray_switch.blockSignals(False)
-        if self._client_id_edit.text() != s.discord_client_id:
-            self._client_id_edit.setText(s.discord_client_id)
+
+        use_custom = bool(getattr(s, "use_custom_client_id", False))
+        custom_id = getattr(s, "custom_client_id", "")
+        self._use_custom_id_switch.blockSignals(True)
+        self._use_custom_id_switch.setChecked(use_custom, animate=False)
+        self._use_custom_id_switch.blockSignals(False)
+        self._refresh_gateway_ui(use_custom, custom_id)
         self._refresh_weather_preview()
 
 
@@ -877,12 +1024,12 @@ class CategoryDistributionBar(QWidget):
 
         w = float(self.width())
         h = float(self.height())
-        painter.setBrush(QColor("#0B0D13"))
+        painter.setBrush(QColor("#0D1117"))
         painter.drawRoundedRect(QRectF(0, 0, w, h), 7.0, 7.0)
 
         total_pct = sum(max(0.0, self._percentages.get(c, 0.0)) for c in CATEGORIES)
         if total_pct <= 0.0:
-            painter.setBrush(QColor("#202638"))
+            painter.setBrush(QColor("#1A212C"))
             painter.drawRoundedRect(QRectF(0, 0, w, h), 7.0, 7.0)
             return
 
@@ -919,7 +1066,7 @@ class SingleCategoryBar(QWidget):
 
         w = float(self.width())
         h = float(self.height())
-        painter.setBrush(QColor("#0B0D13"))
+        painter.setBrush(QColor("#0D1117"))
         painter.drawRoundedRect(QRectF(0, 0, w, h), 4.0, 4.0)
 
         fill_w = (self._pct / 100.0) * w
@@ -953,7 +1100,7 @@ class AnalyticsPage(QScrollArea):
         title_col.setSpacing(2)
         title_lbl = QLabel("\U0001f4ca Mini Timeline & Day in Review", objectName="CardTitle")
         title_lbl.setFont(ui_font(14, QFont.Weight.Bold))
-        self._date_sub_lbl = QLabel("Daily Activity Telemetry â€¢ Persisted to data/analytics.json", objectName="SectionCaption")
+        self._date_sub_lbl = QLabel("Daily Activity Telemetry \u2022 Persisted to data/analytics.json", objectName="SectionCaption")
         self._date_sub_lbl.setFont(ui_font(11))
         title_col.addWidget(title_lbl)
         title_col.addWidget(self._date_sub_lbl)
@@ -971,7 +1118,7 @@ class AnalyticsPage(QScrollArea):
 
         self._total_active_lbl = QLabel("Total Active: 0s", objectName="CardTitle")
         self._total_active_lbl.setFont(mono_font(16, QFont.Weight.Bold))
-        self._total_active_lbl.setStyleSheet("color: #38BDF8;")
+        self._total_active_lbl.setStyleSheet("color: #00E5FF;")
         metrics_row.addWidget(self._total_active_lbl)
 
         self._total_tracked_lbl = QLabel("Tracked Today: 0s", objectName="SectionCaption")
@@ -995,7 +1142,7 @@ class AnalyticsPage(QScrollArea):
         cat_layout.setContentsMargins(16, 14, 16, 14)
         cat_layout.setSpacing(10)
 
-        cat_hdr = QLabel("Category Distribution (Coding â€¢ Media â€¢ Gaming â€¢ Browsing â€¢ Idle)", objectName="CardTitle")
+        cat_hdr = QLabel("Category Distribution (Coding \u2022 Media \u2022 Gaming \u2022 Browsing \u2022 Idle)", objectName="CardTitle")
         cat_hdr.setFont(ui_font(13, QFont.Weight.Bold))
         cat_layout.addWidget(cat_hdr)
 
@@ -1009,8 +1156,8 @@ class AnalyticsPage(QScrollArea):
             row_l.setSpacing(5)
 
             hdr = QHBoxLayout()
-            col_hex = CATEGORY_COLORS.get(cat, "#38BDF8")
-            icon = CATEGORY_ICONS.get(cat, "â€¢")
+            col_hex = CATEGORY_COLORS.get(cat, "#00E5FF")
+            icon = CATEGORY_ICONS.get(cat, "\u2022")
             name_lbl = QLabel(f"{icon}  {cat}")
             name_lbl.setFont(ui_font(11, QFont.Weight.DemiBold))
             name_lbl.setStyleSheet(f"color: {col_hex};")
@@ -1057,11 +1204,11 @@ class AnalyticsPage(QScrollArea):
 
     def refresh_analytics(self, snap: DailyAnalyticsSnapshot | None = None) -> None:
         snap = snap or ANALYTICS_MANAGER.snapshot()
-        self._date_sub_lbl.setText(f"Date: {snap.date_str} â€¢ Saved to data/analytics.json")
+        self._date_sub_lbl.setText(f"Date: {snap.date_str} \u2022 Saved to data/analytics.json")
         self._total_active_lbl.setText(f"Total Active: {format_analytics_duration(snap.total_active_seconds)}")
         self._total_tracked_lbl.setText(f"Total Tracked: {format_analytics_duration(snap.total_tracked_seconds)}")
 
-        icon = CATEGORY_ICONS.get(snap.active_category, "â€¢")
+        icon = CATEGORY_ICONS.get(snap.active_category, "\u2022")
         self._active_cat_pill.setText(f"{icon} {snap.active_category}")
 
         pcts = snap.percentages()
@@ -1097,7 +1244,7 @@ class AnalyticsPage(QScrollArea):
             ts_lbl.setFont(mono_font(10))
             rl.addWidget(ts_lbl)
 
-            col = CATEGORY_COLORS.get(rec.category, "#38BDF8")
+            col = CATEGORY_COLORS.get(rec.category, "#00E5FF")
             pill = QLabel(rec.category)
             pill.setFont(mono_font(9, QFont.Weight.Bold))
             pill.setStyleSheet(
@@ -1129,17 +1276,18 @@ class SidebarWidget(QFrame):
     collapsed_changed = Signal(bool)
 
     NAV_ITEMS = (
-        (0, "\u2756", "[\u2756]  Overview", "Overview â€” Live Discord Preview & Quick Controls"),
-        (1, "\u2630", "[\u2630]  Context Rules", "Context Rules â€” P2â€“P6 Application Detection"),
-        (2, "\u2726", "[\u2726]  Custom RPC Studio", "Custom RPC Studio â€” P1 Manual Override"),
-        (3, "\U0001f4ca", "[\U0001f4ca]  Analytics", "Analytics â€” Mini Timeline & Day in Review"),
-        (4, "\u2699", "[\u2699]  Settings", "Settings â€” Shield, Mood, Celestial & Preferences"),
+        (0, "\u2756", "Overview", "Overview \u2014 Live Discord Preview & Quick Controls"),
+        (1, "\u2630", "Context Rules", "Context Rules \u2014 P2\u2013P6 Application Detection"),
+        (2, "\u2726", "Custom RPC Studio", "Custom RPC Studio \u2014 P1 Manual Override"),
+        (3, "\U0001f4ca", "Analytics", "Analytics \u2014 Mini Timeline & Day in Review"),
+        (4, "\u2699", "Settings", "Settings \u2014 Gateway, Shield, Mood, Celestial & Preferences"),
     )
 
     def __init__(self, app_name: str, tray_minimized: bool = True, parent=None) -> None:
         super().__init__(parent, objectName="Sidebar")
         self._app_name = app_name
         self._collapsed = False
+        self._active_index = 0
         self.setMinimumWidth(self.EXPANDED_WIDTH)
         self.setMaximumWidth(self.EXPANDED_WIDTH)
 
@@ -1152,38 +1300,30 @@ class SidebarWidget(QFrame):
             self._width_anim.addAnimation(anim)
 
         self._root_layout = QVBoxLayout(self)
-        self._root_layout.setContentsMargins(12, 14, 12, 14)
+        self._root_layout.setContentsMargins(12, 12, 12, 14)
         self._root_layout.setSpacing(8)
 
-        # Sidebar Header: Brand + v2.2 Pill + Collapse Toggle Button
+        # Sidebar Top Control Row: Subtle section label + Chevron Collapse Button (no duplicate logo/version)
         header_row = QHBoxLayout()
         header_row.setSpacing(6)
-        self._logo = QLabel("\u25c8 " + app_name, objectName="TitleBrand")
-        self._logo.setFont(ui_font(13, QFont.Weight.Bold))
-        header_row.addWidget(self._logo)
-
-        self._badge = QLabel("v2.2", objectName="TitleVersionBadge")
-        self._badge.setFont(mono_font(9, QFont.Weight.DemiBold))
-        header_row.addWidget(self._badge)
+        self._sub = QLabel("NAVIGATION", objectName="SectionCaption")
+        self._sub.setFont(mono_font(10, QFont.Weight.Bold))
+        header_row.addWidget(self._sub)
         header_row.addStretch(1)
 
-        self._collapse_btn = QPushButton("\u25c0", objectName="TitleBarButton")
+        self._collapse_btn = QPushButton("\u2039", objectName="SidebarCollapseButton")
         self._collapse_btn.setFixedSize(28, 26)
-        self._collapse_btn.setFont(ui_font(10, QFont.Weight.Bold))
+        self._collapse_btn.setFont(ui_font(14, QFont.Weight.Bold))
         self._collapse_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._collapse_btn.setToolTip("Collapse Sidebar (68px Compact Mode)")
         self._collapse_btn.clicked.connect(self.toggle_collapsed)
         header_row.addWidget(self._collapse_btn)
         self._root_layout.addLayout(header_row)
-
-        self._sub = QLabel("Autonomous Multi-Context RPC", objectName="SectionCaption")
-        self._sub.setFont(ui_font(10))
-        self._root_layout.addWidget(self._sub)
-        self._root_layout.addSpacing(6)
+        self._root_layout.addSpacing(4)
 
         self._nav_buttons: dict[int, QPushButton] = {}
-        for idx, icon_only, full_label, tip in self.NAV_ITEMS:
-            btn = QPushButton(full_label, objectName="SidebarNavButton")
+        for idx, icon_only, title_text, tip in self.NAV_ITEMS:
+            btn = QPushButton(self._format_nav_label(idx, idx == 0, False), objectName="SidebarNavButton")
             btn.setFont(ui_font(12, QFont.Weight.DemiBold))
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setToolTip(tip)
@@ -1194,7 +1334,7 @@ class SidebarWidget(QFrame):
 
         self._root_layout.addStretch(1)
 
-        # Footer: Pulsating IPC dot + Tray ToggleSwitch
+        # Unified Sidebar Footer: Blinking StatusDot + Connected (@handle) + Minimize to Tray ToggleSwitch
         self._footer = QFrame(objectName="SidebarFooter")
         f_layout = QVBoxLayout(self._footer)
         f_layout.setContentsMargins(10, 9, 10, 9)
@@ -1220,6 +1360,13 @@ class SidebarWidget(QFrame):
 
         self._root_layout.addWidget(self._footer)
 
+    def _format_nav_label(self, idx: int, is_active: bool, collapsed: bool) -> str:
+        _, icon_only, title_text, _ = self.NAV_ITEMS[idx]
+        if collapsed:
+            return icon_only
+        dot_prefix = "\u25cf " if is_active else ""
+        return f"{dot_prefix}{icon_only}   {title_text}"
+
     @property
     def is_collapsed(self) -> bool:
         return self._collapsed
@@ -1236,22 +1383,20 @@ class SidebarWidget(QFrame):
         current_w = self.width()
 
         # Update child visibility and button text/alignment
-        self._logo.setVisible(not collapsed)
-        self._badge.setVisible(not collapsed)
         self._sub.setVisible(not collapsed)
         self._ipc_label.setVisible(not collapsed)
         self._tray_lbl.setVisible(not collapsed)
         self._tray_switch.setVisible(not collapsed)
 
-        self._collapse_btn.setText("\u25b6" if collapsed else "\u25c0")
+        self._collapse_btn.setText("\u203a" if collapsed else "\u2039")
         self._collapse_btn.setToolTip(
             "Expand Sidebar (220px Full Mode)" if collapsed else "Collapse Sidebar (68px Compact Mode)"
         )
-        self._root_layout.setContentsMargins(8 if collapsed else 12, 14, 8 if collapsed else 12, 14)
+        self._root_layout.setContentsMargins(8 if collapsed else 12, 12, 8 if collapsed else 12, 14)
 
-        for idx, icon_only, full_label, _tip in self.NAV_ITEMS:
+        for idx, _icon_only, _title_text, _tip in self.NAV_ITEMS:
             btn = self._nav_buttons[idx]
-            btn.setText(icon_only if collapsed else full_label)
+            btn.setText(self._format_nav_label(idx, idx == self._active_index, collapsed))
             btn.setProperty("collapsed", "true" if collapsed else "false")
             btn.style().unpolish(btn)
             btn.style().polish(btn)
@@ -1269,8 +1414,11 @@ class SidebarWidget(QFrame):
         self.collapsed_changed.emit(collapsed)
 
     def set_active_page(self, index: int) -> None:
+        self._active_index = index
         for idx, btn in self._nav_buttons.items():
-            btn.setProperty("active", "true" if idx == index else "false")
+            is_act = idx == index
+            btn.setText(self._format_nav_label(idx, is_act, self._collapsed))
+            btn.setProperty("active", "true" if is_act else "false")
             btn.style().unpolish(btn)
             btn.style().polish(btn)
         self.page_selected.emit(index)
@@ -1278,7 +1426,7 @@ class SidebarWidget(QFrame):
     def set_connection(self, status: str, detail: str) -> None:
         self._dot.set_status(status.lower())
         self._dot.setToolTip(detail or f"IPC {status.capitalize()}")
-        short = detail if len(detail) <= 22 else f"IPC {status.capitalize()}"
+        short = detail if len(detail) <= 24 else f"IPC {status.capitalize()}"
         self._ipc_label.setText(short or f"IPC {status.capitalize()}")
         self._ipc_label.setToolTip(detail)
 
@@ -1286,6 +1434,92 @@ class SidebarWidget(QFrame):
         self._tray_switch.blockSignals(True)
         self._tray_switch.setChecked(checked, animate=False)
         self._tray_switch.blockSignals(False)
+
+
+class UpdateBannerWidget(QFrame):
+    """Slim semi-transparent top notification banner for GitHub Release auto-updates."""
+
+    update_requested = Signal(str)   # download_url
+    restart_requested = Signal(str)  # temp_file_path
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent, objectName="UpdateBanner")
+        self._download_url: str = ""
+        self._temp_file_path: str = ""
+        self._ready_to_apply: bool = False
+
+        self.setFixedHeight(40)
+        self.setVisible(False)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(14, 4, 14, 4)
+        layout.setSpacing(10)
+
+        self._msg_label = QLabel(
+            "\u2728 Pembaruan tersedia! Klik untuk memperbarui.",
+            objectName="UpdateBannerText",
+        )
+        self._msg_label.setFont(ui_font(12, QFont.Weight.DemiBold))
+        layout.addWidget(self._msg_label, 1)
+
+        self._progress_bar = QProgressBar(objectName="UpdateProgressBar")
+        self._progress_bar.setRange(0, 100)
+        self._progress_bar.setValue(0)
+        self._progress_bar.setTextVisible(True)
+        self._progress_bar.setFixedWidth(160)
+        self._progress_bar.setFixedHeight(14)
+        self._progress_bar.setVisible(False)
+        layout.addWidget(self._progress_bar, 0)
+
+        self._action_btn = QPushButton("Update Now", objectName="PrimaryButton")
+        self._action_btn.setFont(ui_font(11, QFont.Weight.Bold))
+        self._action_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._action_btn.setFixedHeight(26)
+        self._action_btn.clicked.connect(self._on_action_clicked)
+        layout.addWidget(self._action_btn, 0)
+
+        self._ignore_btn = QPushButton("\u2715", objectName="TitleButton")
+        self._ignore_btn.setFont(ui_font(11, QFont.Weight.Bold))
+        self._ignore_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._ignore_btn.setToolTip("Ignore update for this session")
+        self._ignore_btn.clicked.connect(lambda: self.setVisible(False))
+        layout.addWidget(self._ignore_btn, 0)
+
+    def show_update_available(self, new_version: str, changelog: str, download_url: str) -> None:
+        ver_display = new_version if new_version.lower().startswith("v") else f"v{new_version}"
+        self._download_url = (download_url or "").strip()
+        self._temp_file_path = ""
+        self._ready_to_apply = False
+        self._msg_label.setText(f"\u2728 Pembaruan {ver_display} tersedia! Klik untuk memperbarui.")
+        if changelog:
+            self._msg_label.setToolTip(changelog[:800])
+        self._progress_bar.setVisible(False)
+        self._progress_bar.setValue(0)
+        self._action_btn.setEnabled(True)
+        self._action_btn.setText("Update Now")
+        self.setVisible(True)
+
+    def set_download_progress(self, percent: int) -> None:
+        clamped = min(max(int(percent), 0), 100)
+        self._progress_bar.setVisible(True)
+        self._progress_bar.setValue(clamped)
+        self._action_btn.setEnabled(False)
+        self._action_btn.setText(f"Downloading ({clamped}%)...")
+
+    def show_ready_to_apply(self, temp_file_path: str) -> None:
+        self._temp_file_path = temp_file_path
+        self._ready_to_apply = True
+        self._progress_bar.setVisible(False)
+        self._msg_label.setText("\u2728 Pembaruan siap dipasang. Restart sekarang?")
+        self._action_btn.setEnabled(True)
+        self._action_btn.setText("Restart & Apply")
+        self.setVisible(True)
+
+    def _on_action_clicked(self) -> None:
+        if self._ready_to_apply and self._temp_file_path:
+            self.restart_requested.emit(self._temp_file_path)
+        elif self._download_url:
+            self.update_requested.emit(self._download_url)
 
 
 class MainWindow(QMainWindow):
@@ -1296,7 +1530,7 @@ class MainWindow(QMainWindow):
         self._force_quit = False
 
         app_name = state.settings.discord_app_name or "OmniPresence"
-        self.setWindowTitle(f"{app_name} v2.2")
+        self.setWindowTitle(f"{app_name} v2.3.0")
         self.setWindowIcon(app_icon("disconnected"))
         self.setWindowFlags(
             Qt.WindowType.Window
@@ -1308,8 +1542,8 @@ class MainWindow(QMainWindow):
         self.resize(1160, 760)
         self.setMinimumSize(980, 660)
 
-        shell = QFrame(objectName="WindowShell")
-        shell_layout = QVBoxLayout(shell)
+        central_root = QWidget(self, objectName="centralWidget")
+        shell_layout = QVBoxLayout(central_root)
         shell_layout.setContentsMargins(0, 0, 0, 0)
         shell_layout.setSpacing(0)
 
@@ -1319,7 +1553,13 @@ class MainWindow(QMainWindow):
         self._titlebar.close_clicked.connect(self.close)
         shell_layout.addWidget(self._titlebar)
 
-        workspace = QWidget(objectName="WindowCanvas")
+        # Slim Auto-Update Notification Banner at top of dashboard
+        self._update_banner = UpdateBannerWidget(central_root)
+        self._update_banner.update_requested.connect(self._on_start_update_download)
+        self._update_banner.restart_requested.connect(self._on_apply_update_restart)
+        shell_layout.addWidget(self._update_banner)
+
+        workspace = QWidget(objectName="mainContainer")
         workspace_layout = QHBoxLayout(workspace)
         workspace_layout.setContentsMargins(0, 0, 0, 0)
         workspace_layout.setSpacing(0)
@@ -1357,7 +1597,8 @@ class MainWindow(QMainWindow):
         right_col = QVBoxLayout()
         right_col.setSpacing(12)
 
-        self._controls = QuickControls(state.settings.discord_client_id, page_overview)
+        active_client_id = state.settings.get_active_client_id()
+        self._controls = QuickControls(active_client_id, page_overview)
         self._controls.manual_submitted.connect(state.set_manual)
         self._controls.pause_toggled.connect(state.set_paused)
         self._controls.reload_requested.connect(state.reload_rules)
@@ -1391,7 +1632,7 @@ class MainWindow(QMainWindow):
         pc_layout = QVBoxLayout(page_custom)
         pc_layout.setContentsMargins(14, 14, 14, 14)
         presets_path = state._rules_path.parent / "custom_presets.json"
-        self._custom_rpc = CustomRPCPanel(presets_path, state.settings.discord_client_id, page_custom)
+        self._custom_rpc = CustomRPCPanel(presets_path, active_client_id, page_custom)
         self._custom_rpc.custom_rpc_submitted.connect(state.set_custom_rpc)
         pc_layout.addWidget(self._custom_rpc, 0)
         pc_layout.addStretch(1)
@@ -1405,7 +1646,7 @@ class MainWindow(QMainWindow):
         pa_layout.addWidget(self._analytics_page, 1)
         self._stack.addWidget(page_analytics)  # Index 3
 
-        # --- Page 4: Settings (Privacy Shield, Mood Engine, Celestial Sync, General) ---
+        # --- Page 4: Settings (Gateway, Privacy Shield, Mood Engine, Celestial Sync, General) ---
         page_settings = QWidget(objectName="WindowCanvas")
         ps_layout = QVBoxLayout(page_settings)
         ps_layout.setContentsMargins(14, 14, 14, 14)
@@ -1415,7 +1656,7 @@ class MainWindow(QMainWindow):
 
         workspace_layout.addWidget(self._stack, 1)
         shell_layout.addWidget(workspace, 1)
-        self.setCentralWidget(shell)
+        self.setCentralWidget(central_root)
 
         # Wire reactive StateManager signals
         state.presence_changed.connect(self._on_presence_changed)
@@ -1435,6 +1676,44 @@ class MainWindow(QMainWindow):
         self._on_connection_changed(*state.connection)
         if state.resolution is not None:
             self._on_presence_changed(state.resolution)
+
+        # Background GitHub Release Auto-Updater (silent check 3.5s after startup)
+        self._updater = UpdateCheckerThread(CURRENT_VERSION, parent=self)
+        self._updater.update_available.connect(self._on_update_available)
+        self._updater.download_progress.connect(self._update_banner.set_download_progress)
+        self._updater.download_finished.connect(self._on_update_download_finished)
+        self._updater.check_failed.connect(self._on_update_check_failed)
+        QTimer.singleShot(3500, self._updater.start_check)
+
+    def _on_update_available(self, new_version: str, changelog: str, download_url: str) -> None:
+        self._update_banner.show_update_available(new_version, changelog, download_url)
+        self._state.log("info", "updater", f"New GitHub release available: {new_version}")
+
+    def _on_start_update_download(self, download_url: str) -> None:
+        cleaned_url = (download_url or "").strip()
+        if not cleaned_url:
+            return
+        lower_url = cleaned_url.split("?")[0].lower()
+        if not (lower_url.endswith(".exe") or lower_url.endswith(".zip")):
+            QDesktopServices.openUrl(QUrl(cleaned_url))
+            return
+        self._update_banner.set_download_progress(0)
+        self._state.log("info", "updater", f"Downloading update from {cleaned_url}")
+        self._updater.start_download(cleaned_url)
+
+    def _on_update_download_finished(self, temp_file_path: str) -> None:
+        self._update_banner.show_ready_to_apply(temp_file_path)
+        self._state.log("info", "updater", f"Update package downloaded: {temp_file_path}")
+
+    def _on_update_check_failed(self, error_message: str) -> None:
+        # Silent failure during routine startup check; log only if banner was actively downloading
+        if self._update_banner.isVisible():
+            self._state.log("warn", "updater", f"Update operation failed: {error_message}")
+
+    def _on_apply_update_restart(self, temp_file_path: str) -> None:
+        self._state.log("info", "updater", "Applying update and restarting OmniPresence...")
+        self.prepare_quit()
+        apply_update_and_restart(temp_file_path)
 
     def prepare_quit(self) -> None:
         self._force_quit = True

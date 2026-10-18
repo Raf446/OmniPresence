@@ -383,14 +383,14 @@ class ArtworkTile(QWidget):
 
 
 class ProgressTrack(QWidget):
-    """Smooth animated media duration progress bar with accent gradient and playhead."""
+    """Smooth animated media duration progress bar with Cyan-to-Purple gradient and playhead."""
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setFixedHeight(8)
         self._fraction = 0.0
         self._target = 0.0
-        self._accent = QColor(TIER_COLORS[5])
+        self._accent = QColor("#00E5FF")
 
     def set_accent(self, color: QColor) -> None:
         self._accent = color
@@ -417,120 +417,15 @@ class ProgressTrack(QWidget):
 
         fill_w = max(4.0, self.width() * self._fraction) if self._fraction > 0 else 0.0
         if fill_w > 0:
-            grad = QLinearGradient(0, 0, fill_w, 0)
-            grad.setColorAt(0.0, self._accent)
-            grad.setColorAt(1.0, QColor(DC_TEXT))
+            grad = QLinearGradient(0, 0, max(fill_w, self.width() * 0.6), 0)
+            grad.setColorAt(0.0, QColor("#00E5FF"))
+            grad.setColorAt(1.0, QColor("#A855F7"))
             painter.setBrush(grad)
             painter.drawRoundedRect(QRectF(0, track_y, fill_w, track_h), 2, 2)
 
             knob_x = min(max(fill_w, 3.0), self.width() - 3.0)
             painter.setBrush(QColor(DC_TEXT))
             painter.drawEllipse(QPointF(knob_x, track_y + track_h / 2), 3.2, 3.2)
-
-
-class TierStrip(QWidget):
-    """Six color-coded pill badges for P1..P6 with pulsating indicator on P2 (Compiler Active)."""
-
-    def __init__(self, parent=None) -> None:
-        super().__init__(parent)
-        self.setFixedHeight(48)
-        self._winner: Tier | None = None
-        self._live: frozenset[Tier] = frozenset()
-        self._phase = 0.0
-        self.setAccessibleName("Priority tiers")
-
-        self._pulse_timer = QTimer(self)
-        self._pulse_timer.setInterval(60)
-        self._pulse_timer.timeout.connect(self._advance_pulse)
-        self._pulse_timer.start()
-
-    def _advance_pulse(self) -> None:
-        self._phase = (self._phase + 0.18) % (math.pi * 2)
-        if self._winner == Tier.BUILD or Tier.BUILD in self._live:
-            self.update()
-
-    def set_state(self, winner: Tier | None, live: frozenset[Tier]) -> None:
-        self._winner, self._live = winner, live
-        names = ", ".join(f"P{int(t)} {TIER_TITLES.get(int(t), t.label)}" for t in sorted(live)) or "none"
-        self.setToolTip(f"Active Priority Hierarchy | Live candidates: {names}")
-        self.update()
-
-    def paintEvent(self, _event) -> None:  # noqa: N802
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        tiers = list(Tier)
-        gap = 5
-        width = (self.width() - gap * (len(tiers) - 1)) / len(tiers)
-        pulse = 0.5 + 0.5 * math.sin(self._phase)
-
-        for index, tier in enumerate(tiers):
-            cell = QRectF(index * (width + gap) + 0.5, 1.0, width - 1, self.height() - 2.0)
-            base_color = tier_color(int(tier))
-            is_winner = tier == self._winner
-            is_live = tier in self._live
-
-            if is_winner:
-                fill = QColor(base_color)
-                fill.setAlpha(58 if tier != Tier.BUILD else int(45 + 45 * pulse))
-                edge = QColor(base_color)
-                edge.setAlpha(235)
-                ink = QColor(TEXT)
-                sub_ink = QColor(base_color).lighter(135)
-                pen_w = 1.5
-            elif is_live:
-                fill = QColor(base_color)
-                fill.setAlpha(26)
-                edge = QColor(base_color)
-                edge.setAlpha(130)
-                ink = QColor(base_color).lighter(125)
-                sub_ink = QColor(MUTED)
-                pen_w = 1.1
-            else:
-                fill = QColor(20, 24, 32, 180)
-                edge = QColor(base_color)
-                edge.setAlpha(55)
-                ink = QColor(base_color)
-                ink.setAlpha(175)
-                sub_ink = QColor(DIM)
-                pen_w = 1.0
-
-            painter.setPen(QPen(edge, pen_w))
-            painter.setBrush(fill)
-            painter.drawRoundedRect(cell, 8, 8)
-
-            # Top accent color dot inside each pill (pulsating for P2 Compiler Active)
-            dot_center = QPointF(cell.right() - 8, cell.top() + 8)
-            dot_color = QColor(base_color)
-            if tier == Tier.BUILD and (is_winner or is_live):
-                halo = QRadialGradient(dot_center, 7.0)
-                hc = QColor(base_color)
-                hc.setAlpha(int(180 * pulse))
-                halo.setColorAt(0.0, hc)
-                hc_end = QColor(base_color)
-                hc_end.setAlpha(0)
-                halo.setColorAt(1.0, hc_end)
-                painter.setPen(Qt.PenStyle.NoPen)
-                painter.setBrush(halo)
-                painter.drawEllipse(dot_center, 7.0, 7.0)
-            dot_color.setAlpha(255 if (is_winner or is_live) else 130)
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(dot_color)
-            painter.drawEllipse(dot_center, 2.8, 2.8)
-
-            painter.setPen(ink)
-            painter.setFont(mono_font(11, QFont.Weight.Bold))
-            painter.drawText(
-                QRectF(cell.x() + 4, cell.y() + 5, cell.width() - 10, 16),
-                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                f"P{int(tier)}",
-            )
-            painter.setPen(sub_ink)
-            painter.setFont(ui_font(10, QFont.Weight.DemiBold if is_winner else QFont.Weight.Normal))
-            painter.drawText(
-                QRectF(cell.x() + 2, cell.y() + 23, cell.width() - 4, 16),
-                Qt.AlignmentFlag.AlignCenter,
-                tier.label,
-            )
 
 
 class DiscordPreview(QWidget):
@@ -552,9 +447,9 @@ class DiscordPreview(QWidget):
 
         self._card = QFrame(objectName="DiscordCard")
         self._card_shadow = QGraphicsDropShadowEffect(self._card)
-        self._card_shadow.setBlurRadius(24)
+        self._card_shadow.setBlurRadius(26)
         self._card_shadow.setOffset(0, 4)
-        self._card_shadow.setColor(QColor(41, 121, 255, 45))
+        self._card_shadow.setColor(QColor(0, 229, 255, 42))
         self._card.setGraphicsEffect(self._card_shadow)
 
         card_layout = QVBoxLayout(self._card)
@@ -618,10 +513,13 @@ class DiscordPreview(QWidget):
         progress.addWidget(self._track)
         times = QHBoxLayout()
         self._time_left = QLabel("00:00", objectName="DcClock")
+        self._time_counter = QLabel("00:00 / 00:00", objectName="DcClock")
         self._time_right = QLabel("00:00", objectName="DcClock")
-        for label in (self._time_left, self._time_right):
-            label.setFont(mono_font(10))
+        for label in (self._time_left, self._time_counter, self._time_right):
+            label.setFont(mono_font(10, QFont.Weight.DemiBold))
         times.addWidget(self._time_left)
+        times.addStretch(1)
+        times.addWidget(self._time_counter)
         times.addStretch(1)
         times.addWidget(self._time_right)
         progress.addLayout(times)
@@ -646,7 +544,6 @@ class DiscordPreview(QWidget):
         self._note = QLabel("", objectName="PreviewNote")
         self._note.setWordWrap(True)
         self._note.setFont(ui_font(11))
-        self._strip = TierStrip()
         self._reason = QLabel("", objectName="PreviewReason")
         self._reason.setWordWrap(True)
         self._reason.setFont(mono_font(11))
@@ -656,7 +553,6 @@ class DiscordPreview(QWidget):
         root.setSpacing(9)
         root.addWidget(self._card)
         root.addWidget(self._note)
-        root.addWidget(self._strip)
         root.addWidget(self._reason)
         root.addStretch(1)
 
@@ -695,7 +591,6 @@ class DiscordPreview(QWidget):
         if resolution is None:
             self._header.set_tier(None)
             self._show_empty("Waiting for the first scan of running applications.")
-            self._strip.set_state(None, frozenset())
             self._reason.setText("Arbitration engine initializing...")
             return
 
@@ -709,7 +604,6 @@ class DiscordPreview(QWidget):
             self._track.set_accent(accent)
             self._role_pill.setText(TIER_TITLES.get(int(resolution.tier), resolution.tier.label))
 
-        self._strip.set_state(resolution.tier, resolution.live_tiers)
         self._reason.setText(resolution.reason)
         if resolution.presence is None:
             self._show_empty(
@@ -769,8 +663,11 @@ class DiscordPreview(QWidget):
             return
         total = max(self._end - self._start, 1.0)
         self._track.set_fraction(elapsed / total)
-        self._time_left.setText(format_clock(min(elapsed, total)))
-        self._time_right.setText(format_clock(total))
+        cur_fmt = format_clock(min(elapsed, total))
+        tot_fmt = format_clock(total)
+        self._time_left.setText(cur_fmt)
+        self._time_counter.setText(f"{cur_fmt} / {tot_fmt}")
+        self._time_right.setText(tot_fmt)
 
     def _refresh_note(self) -> None:
         status, detail = self._connection

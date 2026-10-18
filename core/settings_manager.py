@@ -1,4 +1,4 @@
-"""Singleton Settings Manager for OmniPresence v2.2.0: persists and synchronizes config/settings.json."""
+"""Singleton Settings Manager for OmniPresence v2.3.0: persists and synchronizes config/settings.json."""
 from __future__ import annotations
 
 import json
@@ -11,6 +11,7 @@ from typing import Any
 from PySide6.QtCore import QObject, Signal
 
 CLIENT_ID_ENV = "OMNIPRESENCE_CLIENT_ID"
+DEFAULT_CLIENT_ID: str = "1560465175188996176"
 
 
 def _coerce(value: Any, default: Any) -> Any:
@@ -29,7 +30,10 @@ def _coerce(value: Any, default: Any) -> Any:
 
 @dataclass
 class Settings:
-    discord_client_id: str = ""
+    client_id: str = DEFAULT_CLIENT_ID
+    discord_client_id: str = DEFAULT_CLIENT_ID
+    use_custom_client_id: bool = False
+    custom_client_id: str = ""
     discord_app_name: str = "OmniPresence"
     profile_display_name: str = ""
     profile_handle: str = ""
@@ -69,6 +73,11 @@ class Settings:
 
     path: Path | None = field(default=None, repr=False, compare=False)
 
+    def get_active_client_id(self) -> str:
+        if self.use_custom_client_id and self.custom_client_id.strip():
+            return self.custom_client_id.strip()
+        return DEFAULT_CLIENT_ID
+
     @classmethod
     def load(cls, path: Path) -> "Settings":
         settings = cls(path=path)
@@ -84,16 +93,26 @@ class Settings:
                 setattr(settings, item.name, _coerce(raw[item.name], default))
             except (TypeError, ValueError):
                 continue
+        if not settings.client_id.strip():
+            settings.client_id = DEFAULT_CLIENT_ID
+        if not settings.discord_client_id.strip():
+            settings.discord_client_id = DEFAULT_CLIENT_ID
         settings.polling_interval = min(max(settings.polling_interval, 0.25), 30.0)
         settings.idle_threshold_seconds = min(max(settings.idle_threshold_seconds, 30), 86400)
         settings.privacy_inactivity_minutes = min(max(settings.privacy_inactivity_minutes, 0), 720)
         settings.log_capacity = min(max(settings.log_capacity, 50), 5000)
         env_id = os.environ.get(CLIENT_ID_ENV, "").strip()
-        if env_id and not settings.discord_client_id:
-            settings.discord_client_id = env_id
+        if env_id and not settings.custom_client_id:
+            settings.custom_client_id = env_id
+        active_id = settings.get_active_client_id()
+        settings.client_id = active_id
+        settings.discord_client_id = active_id
         return settings
 
     def to_dict(self) -> dict[str, Any]:
+        active_id = self.get_active_client_id()
+        self.client_id = active_id
+        self.discord_client_id = active_id
         return {
             item.name: getattr(self, item.name)
             for item in fields(self)
@@ -125,7 +144,7 @@ class Settings:
 
 
 class SettingsManager(QObject):
-    """Thread-safe singleton managing OmniPresence v2.2.0 settings and broadcasting live updates."""
+    """Thread-safe singleton managing OmniPresence v2.3.0 settings and broadcasting live updates."""
 
     settings_changed = Signal(object)
 

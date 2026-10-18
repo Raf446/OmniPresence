@@ -34,7 +34,7 @@ class TelemetrySampler:
     or after `publish_interval` seconds.
     """
 
-    def __init__(self, publish_interval: float = 30.0, swing: float = 15.0) -> None:
+    def __init__(self, publish_interval: float = 15.0, swing: float = 15.0) -> None:
         self._publish_interval = publish_interval
         self._swing = swing
         self._cpu_avg: float | None = None
