@@ -4,7 +4,7 @@
 
 **High-Performance, Multi-Context Discord Rich Presence Engine for Windows**
 
-[![Version](https://img.shields.io/badge/version-2.1.1-blue.svg?style=flat-square)](https://github.com/Raf446/OmniPresence/releases)
+[![Version](https://img.shields.io/badge/version-2.2-blue.svg?style=flat-square)](https://github.com/Raf446/OmniPresence/releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6.svg?style=flat-square)](#)
 [![Python](https://img.shields.io/badge/python-3.11%2B-3776AB.svg?style=flat-square)](#)
 [![GUI](https://img.shields.io/badge/gui-PySide6%20(Qt6)-41CD52.svg?style=flat-square)](#)
