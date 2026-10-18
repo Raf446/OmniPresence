@@ -1,4 +1,4 @@
-"""Frameless Obsidian Glass main window (v2.3.0) with Collapsible Sidebar + 5-page AnimatedStackedWidget."""
+"""Frameless Obsidian Glass main window (v2.3.1) with Collapsible Sidebar + 5-page AnimatedStackedWidget."""
 from __future__ import annotations
 
 import html
@@ -226,7 +226,7 @@ class CustomTitleBar(QFrame):
         brand.setFont(ui_font(13, QFont.Weight.Bold))
         layout.addWidget(brand)
 
-        ver = QLabel("v2.3.0", objectName="TitleVersionBadge")
+        ver = QLabel(CURRENT_VERSION, objectName="TitleVersionBadge")
         ver.setFont(mono_font(10, QFont.Weight.DemiBold))
         layout.addWidget(ver)
 
@@ -498,7 +498,7 @@ class ActivityLogPanel(QFrame):
 
 
 class SettingsPage(QScrollArea):
-    """Page 4 (Settings): Discord Gateway Configuration + 3 v2.3.0 Innovations + General Preferences."""
+    """Page 4 (Settings): Discord Gateway Configuration + 3 v2.3.1 Innovations + General Preferences."""
 
     def __init__(self, state: StateManager, parent=None) -> None:
         super().__init__(parent, objectName="SettingsScrollArea")
@@ -1530,7 +1530,7 @@ class MainWindow(QMainWindow):
         self._force_quit = False
 
         app_name = state.settings.discord_app_name or "OmniPresence"
-        self.setWindowTitle(f"{app_name} v2.3.0")
+        self.setWindowTitle(f"{app_name} {CURRENT_VERSION}")
         self.setWindowIcon(app_icon("disconnected"))
         self.setWindowFlags(
             Qt.WindowType.Window

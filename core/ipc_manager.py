@@ -111,6 +111,8 @@ class IPCManager(QThread):
         self._client_id = client_id.strip()
         self._lock = threading.Lock()
         self._desired: PresenceData | None = None
+        self.pending_activity: PresenceData | None = None
+        self._has_pending: bool = False
         self._halt = threading.Event()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._wake: asyncio.Event | None = None
@@ -118,11 +120,15 @@ class IPCManager(QThread):
 
     @staticmethod
     def _is_priority_transition(prev: PresenceData | None, curr: PresenceData | None) -> bool:
-        """Return True when switching rules/tiers, changing track/details/buttons, or upgrading placeholder to artwork."""
+        """Return True when switching rules/tiers, changing track/details/buttons, seeking, or upgrading placeholder to artwork."""
         if (prev is None) != (curr is None):
             return True
         if prev is None or curr is None:
             return False
+        start_shifted = (
+            (prev.start is None) != (curr.start is None)
+            or (prev.start is not None and curr.start is not None and abs(curr.start - prev.start) > 2)
+        )
         return (
             curr.tier == 1
             or curr.tier != prev.tier
@@ -132,6 +138,7 @@ class IPCManager(QThread):
             or curr.large_image != prev.large_image
             or curr.small_image != prev.small_image
             or curr.buttons != prev.buttons
+            or start_shifted
         )
 
     @staticmethod
@@ -156,9 +163,11 @@ class IPCManager(QThread):
         return display_name, handle
 
     def submit(self, presence: PresenceData | None) -> None:
-        """Replace any queued pending payload with the latest state and wake the IPC worker immediately."""
+        """Store the latest presence in pending_activity buffer and wake the IPC worker immediately."""
         with self._lock:
             self._desired = presence
+            self.pending_activity = presence
+            self._has_pending = True
         self._poke()
 
     def set_client_id(self, client_id: str) -> None:
@@ -176,9 +185,24 @@ class IPCManager(QThread):
         if loop is not None and wake is not None and not loop.is_closed():
             loop.call_soon_threadsafe(wake.set)
 
-    def _snapshot(self) -> tuple[str, PresenceData | None]:
+    def _snapshot(self) -> tuple[str, PresenceData | None, bool]:
         with self._lock:
-            return self._client_id, self._desired
+            active_payload = self.pending_activity if self._has_pending else self._desired
+            return self._client_id, active_payload, self._has_pending
+
+    def _stage_pending(self, presence: PresenceData | None) -> None:
+        """Buffer an activity update when blocked by Discord IPC rate-limit cooldown."""
+        with self._lock:
+            self.pending_activity = presence
+            self._has_pending = True
+
+    def _consume_pending(self) -> PresenceData | None:
+        """Atomically pop the latest buffered pending_activity ready for IPC transmission."""
+        with self._lock:
+            payload = self.pending_activity if self._has_pending else self._desired
+            self._desired = payload
+            self._has_pending = False
+            return payload
 
     def _set_status(self, state: ConnectionState, detail: str = "") -> None:
         if self._status != (state.value, detail):
@@ -210,7 +234,7 @@ class IPCManager(QThread):
         backoff = Backoff()
         while not self._halt.is_set():
             self._wake.clear()
-            client_id, _ = self._snapshot()
+            client_id, _, _ = self._snapshot()
             if not client_id.isdigit():
                 self._set_status(ConnectionState.ERROR, "Discord Application ID is not set")
                 await self._sleep(None)
@@ -263,7 +287,7 @@ class IPCManager(QThread):
 
         while not self._halt.is_set():
             self._wake.clear()
-            current_id, desired = self._snapshot()
+            current_id, desired, has_pending = self._snapshot()
             if current_id != client_id:
                 return
             reader = getattr(rpc, "sock_reader", None)
@@ -273,30 +297,48 @@ class IPCManager(QThread):
             now = time.monotonic()
             while sent_at and now - sent_at[0] > self.WINDOW_SECONDS:
                 sent_at.popleft()
-            due = (not pushed_once) or desired != last_pushed or now - last_io >= self.HEARTBEAT_SECONDS
+
+            due = (
+                (not pushed_once)
+                or has_pending
+                or desired != last_pushed
+                or now - last_io >= self.HEARTBEAT_SECONDS
+            )
             if due:
+                # If pending_activity equals what is already displayed and heartbeat isn't due, skip redundant send
+                if pushed_once and desired == last_pushed and now - last_io < self.HEARTBEAT_SECONDS:
+                    self._consume_pending()
+                    timeout = self.HEARTBEAT_SECONDS - (now - last_io)
+                    await self._sleep(min(timeout, self.LIVENESS_CHECK_SECONDS))
+                    continue
+
                 wait = 0.0
                 if sent_at:
                     is_switch = (not pushed_once) or self._is_priority_transition(last_pushed, desired)
                     min_gap = (
                         self.PRIORITY_SWITCH_GAP
-                        if (is_switch and len(sent_at) < self.WINDOW_LIMIT - 1)
+                        if (is_switch and len(sent_at) < self.WINDOW_LIMIT)
                         else self.SUSTAINED_GAP_SECONDS
                     )
                     wait = max(wait, min_gap - (now - sent_at[-1]))
                 if len(sent_at) >= self.WINDOW_LIMIT:
-                    wait = max(wait, self.WINDOW_SECONDS - (now - sent_at[0]) + 0.1)
+                    wait = max(wait, self.WINDOW_SECONDS - (now - sent_at[0]) + 0.08)
+
                 if wait <= 0:
-                    await self._push(rpc, desired)
-                    last_pushed, pushed_once = desired, True
+                    payload_to_send = self._consume_pending()
+                    await self._push(rpc, payload_to_send)
+                    last_pushed, pushed_once = payload_to_send, True
                     last_io = time.monotonic()
                     sent_at.append(last_io)
-                    self.presence_sent.emit(desired)
+                    self.presence_sent.emit(payload_to_send)
                     continue
+
+                # Rate-limit cooldown active: keep latest payload in pending_activity buffer and wake as soon as cooldown expires
+                self._stage_pending(desired)
                 timeout = wait
             else:
                 timeout = self.HEARTBEAT_SECONDS - (now - last_io)
-            await self._sleep(min(timeout, self.LIVENESS_CHECK_SECONDS))
+            await self._sleep(min(max(timeout, 0.05), self.LIVENESS_CHECK_SECONDS))
 
     async def _push(self, rpc: AioPresence, presence: PresenceData | None) -> None:
         try:

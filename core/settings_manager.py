@@ -1,4 +1,4 @@
-"""Singleton Settings Manager for OmniPresence v2.3.0: persists and synchronizes config/settings.json."""
+"""Singleton Settings Manager for OmniPresence v2.3.1: persists and synchronizes config/settings.json."""
 from __future__ import annotations
 
 import json
@@ -144,7 +144,7 @@ class Settings:
 
 
 class SettingsManager(QObject):
-    """Thread-safe singleton managing OmniPresence v2.3.0 settings and broadcasting live updates."""
+    """Thread-safe singleton managing OmniPresence v2.3.1 settings and broadcasting live updates."""
 
     settings_changed = Signal(object)
 

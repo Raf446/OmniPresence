@@ -9,8 +9,8 @@ import sys
 from pathlib import Path
 
 APP_NAME = "OmniPresence"
-APP_VERSION = "2.3"
-APP_VERSION_TUPLE = (1, 0, 0, 0)
+APP_VERSION = "2.3.1"
+APP_VERSION_TUPLE = (2, 3, 1, 0)
 APP_PUBLISHER = "Raf446"
 APP_DESCRIPTION = "OmniPresence - Autonomous Multi-Context Discord Rich Presence Engine"
 
@@ -138,7 +138,7 @@ VSVersionInfo(
         '040904B0',
         [StringStruct('CompanyName', '{APP_PUBLISHER}'),
         StringStruct('FileDescription', '{APP_DESCRIPTION}'),
-        StringStruct('FileVersion', '{APP_VERSION}'),
+        StringStruct('FileVersion', '{APP_VERSION}.0'),
         StringStruct('InternalName', '{APP_NAME}'),
         StringStruct('LegalCopyright', 'Copyright (c) 2026 {APP_PUBLISHER}'),
         StringStruct('OriginalFilename', '{APP_NAME}.exe'),

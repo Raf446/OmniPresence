@@ -1,4 +1,4 @@
-"""Modern iOS/macOS-style animated pill ToggleSwitch for OmniPresence v2.3.0."""
+"""Modern iOS/macOS-style animated pill ToggleSwitch for OmniPresence v2.3.1."""
 from __future__ import annotations
 
 from PySide6.QtCore import Property, QEasingCurve, QPropertyAnimation, QRectF, QSize, Qt, Signal

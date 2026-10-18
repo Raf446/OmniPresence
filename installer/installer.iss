@@ -1,5 +1,5 @@
 #define MyAppName "OmniPresence"
-#define MyAppVersion "2.3"
+#define MyAppVersion "2.3.1"
 #define MyAppPublisher "RafStore"
 #define MyAppURL "https://github.com/Raf446/OmniPresence"
 #define MyAppExeName "OmniPresence.exe"
@@ -30,8 +30,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "startup"; Description: "Run OmniPresence automatically on Windows startup"; GroupDescription: "Startup options:"
 
 [Files]
-Source: "..\dist\OmniPresence\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\dist\OmniPresence\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\dist\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

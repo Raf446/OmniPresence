@@ -2,7 +2,7 @@
   "date": "2026-10-18",
   "totals": {
     "Coding": 79.02,
-    "Media": 830.39,
+    "Media": 833.42,
     "Gaming": 0.0,
     "Browsing": 12.26,
     "Idle": 658.52
@@ -10,11 +10,11 @@
   "sessions": [
     {
       "category": "Media",
-      "headline": "Sedia Aku Sebelum Hujan • by Idgitaf",
+      "headline": "Cincin (Janji Hati) • by David Bayu",
       "rule_id": "spotify",
       "started_at": 1792311571.85,
-      "updated_at": 1792311782.64,
-      "duration_seconds": 211.78
+      "updated_at": 1792325198.37,
+      "duration_seconds": 214.81
     },
     {
       "category": "Browsing",
@@ -235,21 +235,21 @@
     "2026-10-18": {
       "totals": {
         "Coding": 79.02,
-        "Media": 830.39,
+        "Media": 833.42,
         "Gaming": 0.0,
         "Browsing": 12.26,
         "Idle": 658.52
       },
-      "total_active_seconds": 921.68,
-      "total_tracked_seconds": 1580.2,
+      "total_active_seconds": 924.7,
+      "total_tracked_seconds": 1583.22,
       "sessions": [
         {
           "category": "Media",
-          "headline": "Sedia Aku Sebelum Hujan • by Idgitaf",
+          "headline": "Cincin (Janji Hati) • by David Bayu",
           "rule_id": "spotify",
           "started_at": 1792311571.85,
-          "updated_at": 1792311782.64,
-          "duration_seconds": 211.78
+          "updated_at": 1792325198.37,
+          "duration_seconds": 214.81
         },
         {
           "category": "Browsing",
@@ -444,7 +444,7 @@
           "duration_seconds": 290.74
         }
       ],
-      "updated_at": "2026-10-18T15:23:02"
+      "updated_at": "2026-10-18T19:06:38"
     }
   }
 }

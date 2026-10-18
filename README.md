@@ -1,14 +1,15 @@
+
 <div align="center">
 
 # OmniPresence
 
-**High-Performance, Multi-Context Discord Rich Presence Engine for Windows**
+**Intelligent, Multi-Context Discord Rich Presence Engine for Windows**
 
-[![Version](https://img.shields.io/badge/version-2.3-blue.svg?style=flat-square)](https://github.com/Raf446/OmniPresence/releases)
+[![Version](https://img.shields.io/badge/version-2.3.1-0078D6.svg?style=flat-square)](https://github.com/Raf446/OmniPresence/releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6.svg?style=flat-square)](#)
 [![Python](https://img.shields.io/badge/python-3.11%2B-3776AB.svg?style=flat-square)](#)
 [![GUI](https://img.shields.io/badge/gui-PySide6%20(Qt6)-41CD52.svg?style=flat-square)](#)
-[![Discord IPC](https://img.shields.io/badge/ipc-Discord%20Native%20Pipe-5865F2.svg?style=flat-square)](#)
+[![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](mit_license.md)
 
 </div>
 
@@ -16,155 +17,144 @@
 
 ## ⚡ Overview
 
-**OmniPresence** is an automated, intelligent Discord Rich Presence suite for Windows that resolves concurrent activity conflicts through deterministic **tiered priority arbitration**. It continuously evaluates active toolchains, full-screen games, IDEs, browser video streams, and OS-level media sessions in real time with sub-second transition latency.
+**OmniPresence** adalah engine Discord Rich Presence otomatis untuk Windows yang dirancang buat menangani banyak aktivitas sekaligus tanpa konflik status. Menggunakan sistem **Tiered Priority Arbitration (P1–P6)**, aplikasi ini otomatis menentukan aktivitas mana yang paling relevan untuk ditampilkan di profil Discord—mulai dari proses kompilasi kode, game full-screen, IDE, sesi media (Spotify/YouTube), hingga deteksi status idle saat kamu AFK.
 
-Featuring an asynchronous worker pool (`QThreadPool`), OmniPresence fetches and caches high-definition album art and YouTube video thumbnails on the fly with **zero API keys required**.
+Dirancang *plug-and-play* dengan gateway terpusat, antarmuka modern **Pure Obsidian Dark**, auto-updater bawaan, dan installer setup sekali klik tanpa perlu setup manual yang ribet.
 
 ---
 
-## 🏗️ Architecture Pipeline
+## ✨ Fitur Unggulan
 
-```mermaid
-flowchart TD
-    subgraph OS [System Hardware & OS Hooks]
-        W[WinEvent Hook / Foreground Tracker]
-        S[Windows SMTC Media Sessions]
-        P[Process & Z-Order Window Enumerator]
-    end
+* **Plug & Play Gateway (Official App ID):**  
+  Langsung jalan out-of-the-box menggunakan Official Gateway Application ID terpusat ala PreMiD. Cukup install dan jalankan—tanpa perlu repot bikin bot atau copy-paste Client ID sendiri di Discord Developer Portal (opsi Custom ID tetap tersedia di tab Settings untuk kebutuhan khusus).
 
-    subgraph Engine [Priority Arbitration Engine]
-        direction TB
-        P1["[P1] Manual Override"]
-        P2["[P2] Compiler & Toolchains (GCC, MSVC, Rustc)"]
-        P3["[P3] Fullscreen Games (DirectX / Vulkan)"]
-        P4["[P4] IDEs & Workspaces (VS Code, Visual Studio)"]
-        P5["[P5] Media & Browsers (YouTube, Spotify, SMTC)"]
-        P6["[P6] Idle / AFK Guard (Win32 LastInputInfo)"]
+* **Auto-Updater via GitHub Releases:**  
+  Aplikasi otomatis mengecek rilis terbaru di latar belakang secara *silent*. Saat versi baru rilis di GitHub, banner update akan muncul di UI lengkap dengan tombol instalasi dan mekanisme *hot-swap* otomatis saat aplikasi di-restart.
 
-        P1 --> P2 --> P3 --> P4 --> P5 --> P6
-    end
+* **Inno Setup Installer Resmi:**  
+  Tersedia installer `.exe` berbasis per-user install (`%LocalAppData%`). Pemasangan praktis tanpa butuh izin Administrator, lengkap dengan opsi Desktop Shortcut dan otomatis jalan saat Windows startup.
 
-    subgraph Resolvers [Async Scrobbler & Media Resolvers]
-        YT[YouTubeThumbnailResolver<br/>Gzip stream & videoId parser]
-        SC[MediaScrobbler<br/>Title cleanup & token scoring]
-    end
+* **Zero-Key YouTube & Media Resolvers:**  
+  Menampilkan video YouTube dan lagu Spotify yang sedang diputar beserta thumbnail resolusi tinggi secara *real-time* tanpa butuh API key atau akun developer apa pun. Dilengkapi filter cerdas untuk membersihkan judul video dari karakter sampah, unread badge, dan nama browser.
 
-    subgraph IPC [Adaptive IPC Transmission]
-        FL[Fast-Lane Transition: 0.25s]
-        RT[Sustained Rate-Limit Guard: 4.50s]
-        Pipe["\\.\pipe\discord-ipc-0"]
-    end
+* **Preemptive Foreground & Z-Order Arbitration:**  
+  Aktivitas jendela yang sedang aktif di foreground otomatis mengambil prioritas tertinggi dengan latensi transisi super cepat (<0.25s) tetap patuh pada *rate-limit* IPC Discord (4 req / 20s).
 
-    OS --> Engine
-    Engine --> Resolvers
-    Resolvers --> IPC
-    IPC --> Discord[Discord Desktop Client]
+* **Pure Obsidian UI:**  
+  Dibangun dengan PySide6 (Qt6) bertema *Obsidian Dark* yang bersih, kontras tinggi, dan ringan di hardware tanpa *visual glitch*.
+
+---
+
+## 🏗️ Alur Prioritas Engine (P1 – P6)
+
+OmniPresence membagi aktivitas ke dalam 6 tier deterministik:
+
 
 ```
 
----
-
-## 🌟 Key Capabilities
-
-### 1. Zero-Key YouTube Thumbnail Resolver
-
-* **High-Res Thumbnail Extraction:** Resolves `hqdefault.jpg` thumbnails directly via lightweight gzip stream parsing (~160 KB payload, <900ms) without requiring Google Cloud / YouTube API credentials.
-* **Window Noise Stripping:** Strips audio glyphs (`▶`, `🔊`), zero-width Unicode characters (`\u200b`), unread badges `(1)`, and browser suffixes (`- Brave`, `- Google Chrome`, `- Microsoft Edge`, `— Mozilla Firefox`).
-* **Fallback Navigation States:** Cleanly presents states such as `"Browsing YouTube"` or `"Browsing YouTube (Subscriptions)"` when browsing feeds.
-
-### 2. Music Artwork & Metadata Sanitization
-
-* **Noise Filter:** Strips bracketed metadata (`[Official Video]`, `(Remastered)`, `(From "OST")`) and long collaborator strings (`feat.`, `with`) before querying artwork endpoints.
-* **Candidate Scoring Engine:** Uses `difflib.SequenceMatcher` with a strict `0.58` acceptance threshold to automatically reject tribute bands, karaoke tracks, and unrelated covers.
-
-### 3. Preemptive Z-Order Context Arbitration
-
-* **Foreground Preemption:** Active foreground applications immediately override sticky background IDE contexts (`foreground=True` beats `foreground=False`).
-* **Fast-Lane IPC Dispatch:** Rule and track transitions update within `0.25s` while maintaining Discord's 4 req / 20s rate-limit boundary.
-
----
-
-## 📊 Priority Hierarchy Matrix
-
-| Tier | Classification | Trigger Scope | Eviction & Sticky Behavior |
-| --- | --- | --- | --- |
-| **P1** | **Manual Override** | UI Action Bar override toggle | Overrides all activities until disengaged. |
-| **P2** | **Toolchain / Build** | `gcc`, `cl`, `rustc`, `cargo`, `ninja` | Active while process exists; evicted upon link completion. |
-| **P3** | **Fullscreen Games** | Process list & exclusive fullscreen | Retains screen focus; prevents media from covering gameplay. |
-| **P4** | **IDEs & Editors** | `code.exe`, `devenv.exe`, `codeblocks.exe` | Foreground focus with configurable sticky cooldown buffer. |
-| **P5** | **Media & Browsers** | YouTube (Brave/Chrome/Edge), Spotify, SMTC | Displays active track/video with validated cover or thumbnail. |
-| **P6** | **Idle / AFK** | `GetLastInputInfo()` > 300s | Enters standby when no hardware input is detected. |
-
----
-
-## 📁 Repository Layout
+[P1] Manual Override / Privacy Shield
+└─► [P2] Compilers & Toolchains (GCC, Clang, MSVC, Rustc)
+└─► [P3] Full-screen Games (DirectX / Vulkan)
+└─► [P4] IDE & Workspace (VS Code, Visual Studio, Code::Blocks)
+└─► [P5] Media & Browsers (Spotify, YouTube, Windows SMTC)
+└─► [P6] Idle & Celestial Sync (Win32 LastInputInfo / Cuaca)
 
 ```
+
+| Tier | Kategori | Contoh Trigger | Perilaku & Durasi |
+| :--- | :--- | :--- | :--- |
+| **P1** | **Manual Override** | Toggle tombol Override di UI | Mengunci status kustom pilihanmu dan mengabaikan tier di bawahnya. |
+| **P2** | **Toolchain / Build** | `gcc.exe`, `cl.exe`, `cargo.exe`, `ninja` | Aktif selama proses kompilasi berjalan; langsung lepas saat proses selesai. |
+| **P3** | **Fullscreen Games** | Valorant, Forza, Minecraft, dsb. | Mengambil fokus layar penuh agar status media/IDE tidak menimpa game. |
+| **P4** | **IDEs & Editors** | `code.exe`, `codeblocks.exe`, Visual Studio | Aktif saat jendela coding sedang dikerjakan di foreground. |
+| **P5** | **Media & Browsers** | YouTube (Chrome/Edge/Brave), Spotify | Menampilkan cover album / thumbnail video dengan metadata bersih. |
+| **P6** | **Idle / Celestial** | `GetLastInputInfo()` > 300s | Menampilkan status santai, ikon cuaca lokal dinamis, atau custom idle icon. |
+
+---
+
+## 📁 Struktur Repositori
+
+
+```
+
 OmniPresence/
-├── assets/               # Application icons, styling, and vector assets
+├── assets/               # Ikon aplikasi, artwork, dan tema styling QSS
 ├── config/
-│   └── rules.json        # Declarative detection rules, regex, and tier bindings
+│   ├── rules.json        # Basis data aturan deteksi proses, regex, dan tier
+│   └── settings.json     # Konfigurasi aplikasi pengguna
 ├── core/
-│   ├── ipc_manager.py    # Discord IPC socket client & rate-limiting pipe handler
-│   ├── priority_engine.py# Hierarchy evaluator, template parser, and context arbiter
-│   ├── process_watcher.py# WinEvent foreground hook & Z-order window scanner
-│   └── state_manager.py  # Application lifecycle & Qt signal coordinator
+│   ├── ipc_manager.py    # Handler Discord IPC native named pipe socket
+│   ├── priority_engine.py# Engine arbitrase tier prioritas & template parser
+│   ├── process_watcher.py# WinEvent hook & pelacak jendela aktif foreground
+│   ├── settings_manager.py # Pengelola konfigurasi & gateway ID terpusat
+│   └── updater.py        # Worker auto-updater & GitHub Releases checker
 ├── extractors/
-│   ├── media_scrobbler.py# Windows SMTC extractor & artwork candidate scorer
-│   └── youtube_resolver.py# Async zero-key YouTube thumbnail resolver
+│   ├── celestial_sync.py # Sinkronisasi cuaca & status idle dinamis
+│   ├── media_scrobbler.py# Windows SMTC extractor & normalisasi metadata musik
+│   └── youtube_resolver.py# Async parser thumbnail YouTube tanpa API key
+├── installer/
+│   └── installer.iss     # Skrip kompilasi installer Inno Setup
 ├── ui/
-│   ├── discord_preview.py# Real-time Discord card preview widget
-│   └── main_window.py    # Control surface UI & live activity telemetry
-├── build.bat             # Production one-file PyInstaller build script
-├── build_exe.py          # PyInstaller build spec & Windows binary metadata
-├── main.py               # Entrypoint & Qt application loop
-└── requirements.txt      # Core runtime dependencies
+│   ├── discord_preview.py# Widget preview profile card Discord secara real-time
+│   └── main_window.py    # Antarmuka dashboard, kontrol tier, dan update banner
+├── build.bat             # Skrip build binary standalone PyInstaller
+├── main.py               # Entrypoint aplikasi utama
+└── requirements.txt      # Dependensi Python
 
 ```
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Cara Penggunaan
 
-### Prerequisites
+### Opsi 1: Menggunakan Installer (Rekomendasi Pengguna)
+Cukup unduh installer terbaru di tab **[Releases](https://github.com/Raf446/OmniPresence/releases)**:
+1. Jalankan `OmniPresence-Setup-v2.3.1.exe`.
+2. Ikuti wizard instalasi sampai selesai.
+3. Buka OmniPresence dari Desktop atau Start Menu. Aplikasi akan otomatis terhubung ke Discord dan memeriksa pembaruan di latar belakang.
 
-* Windows 10 or 11 (64-bit)
-* Python 3.11+ (for development run)
-* Discord Desktop Client
-
-### Development Setup
+### Opsi 2: Menjalankan dari Source Code (Developer)
+Pastikan kamu menggunakan **Windows 10/11 (64-bit)** dan **Python 3.11+**:
 
 ```powershell
-# 1. Clone repository
+# 1. Clone repositori
 git clone [https://github.com/Raf446/OmniPresence.git](https://github.com/Raf446/OmniPresence.git)
 cd OmniPresence
 
-# 2. Set up virtual environment
+# 2. Buat virtual environment & install dependensi
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 
-# 3. Verify engine integrity
+# 3. Jalankan smoke-test untuk verifikasi modul
 python main.py --smoke-test 2.0
 
-# 4. Launch OmniPresence
+# 4. Jalankan aplikasi
 python main.py
 
 ```
 
-### Standalone Executable Build
+---
 
-To compile a standalone binary that runs without a local Python runtime:
+## 📦 Build Standalone & Installer Sendiri
 
+Jika ingin membuat binary `.exe` dan file setup installer secara lokal:
+
+1. **Build Standalone Exe:**
 ```powershell
 .\build.bat
 
 ```
 
-The compiled binary will be placed at `dist\OmniPresence.exe` with bundled configuration files.
+
+*File binary akan di-generate di folder `dist\`.*
+2. **Kompilasi Setup Installer:**
+Buka file `installer/installer.iss` menggunakan [Inno Setup 6](https://jrsoftware.org/isdl.php), lalu tekan `Ctrl + F9` (Compile). Installer setup siap pakai akan otomatis berada di direktori `dist_installer\`.
 
 ---
 
-## 📄 License
+## 📄 Lisensi
 
-Distributed under the [MIT License](mit_license). Free for personal and commercial usage.
+Proyek ini dirilis di bawah lisensi [MIT License](https://www.google.com/search?q=mit_license.md). Bebas digunakan, dimodifikasi, dan didistribusikan.
+
+```

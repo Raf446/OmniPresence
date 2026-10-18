@@ -568,7 +568,7 @@
         "large_image": "{celestial_icon|idle}",
         "large_text": "System Idle â€¢ {ambient_vibe|Away from keyboard}",
         "small_image": "ram_chip",
-        "small_text": "OmniPresence v2.1.1",
+        "small_text": "OmniPresence v2.3.1",
         "timestamp": "session",
         "activity_type": "playing"
       }
@@ -594,7 +594,7 @@
         "large_image": "{celestial_icon|idle}",
         "large_text": "System Idle â€¢ {ambient_vibe|Standing by}",
         "small_image": "ram_chip",
-        "small_text": "OmniPresence v2.1.1",
+        "small_text": "OmniPresence v2.3.1",
         "timestamp": "none",
         "activity_type": "playing"
       }

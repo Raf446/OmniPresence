@@ -1,4 +1,4 @@
-"""GitHub Releases Auto-Updater & Hot-Swap Binary Replacement for OmniPresence (v2.3.0)."""
+"""GitHub Releases Auto-Updater & Hot-Swap Binary Replacement for OmniPresence (v2.3.1)."""
 from __future__ import annotations
 
 import json
@@ -16,7 +16,7 @@ from PySide6.QtWidgets import QApplication
 
 GITHUB_REPO: str = "Raf446/OmniPresence"
 LATEST_RELEASE_API_URL: str = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-CURRENT_VERSION: str = "v2.3.0"
+CURRENT_VERSION: str = "v2.3.1"
 USER_AGENT: str = f"OmniPresence-Updater/{CURRENT_VERSION.lstrip('v')} (+https://github.com/{GITHUB_REPO})"
 
 
