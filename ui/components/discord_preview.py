@@ -143,8 +143,24 @@ class ProfileHeader(QWidget):
         self._accent = QColor(TIER_COLORS[4])
         self._tier_badge = "STANDBY"
         self._ipc_status = "disconnected"
+        self._avatar: QPixmap | None = None
+        self._banner: QPixmap | None = None
+        self._banner_color: QColor | None = None
         self.setFixedHeight(self.BANNER + self.AVATAR // 2 + 6)
         self.setAccessibleName("Profile header preview")
+
+    def set_avatar(self, pixmap: QPixmap | None) -> None:
+        self._avatar = pixmap if (pixmap is not None and not pixmap.isNull()) else None
+        self.update()
+
+    def set_banner(self, pixmap: QPixmap | None) -> None:
+        self._banner = pixmap if (pixmap is not None and not pixmap.isNull()) else None
+        self.update()
+
+    def set_banner_color(self, hex_color: str) -> None:
+        color = QColor(hex_color) if hex_color else QColor()
+        self._banner_color = color if color.isValid() else None
+        self.update()
 
     def set_name(self, name: str) -> None:
         cleaned = (name or "").strip()
@@ -174,24 +190,44 @@ class ProfileHeader(QWidget):
         painter.setClipPath(clip)
 
         banner_rect = QRectF(0, 0, self.width(), self.BANNER)
-        grad = QLinearGradient(0, 0, self.width(), self.BANNER)
-        c_top = QColor(self._accent)
-        c_top.setAlpha(95)
-        c_mid = QColor(DC_BANNER_BASE)
-        grad.setColorAt(0.0, c_top)
-        grad.setColorAt(0.65, c_mid)
-        grad.setColorAt(1.0, QColor("#151922"))
-        painter.fillRect(banner_rect, grad)
+        if self._banner is not None and not self._banner.isNull():
+            scaled_banner = self._banner.scaled(
+                max(int(banner_rect.width()), 1),
+                max(int(banner_rect.height()), 1),
+                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            src = QRectF(
+                (scaled_banner.width() - banner_rect.width()) / 2,
+                (scaled_banner.height() - banner_rect.height()) / 2,
+                banner_rect.width(),
+                banner_rect.height(),
+            )
+            painter.drawPixmap(banner_rect, scaled_banner, src)
+            shade = QLinearGradient(0, 0, 0, self.BANNER)
+            shade.setColorAt(0.0, QColor(0, 0, 0, 25))
+            shade.setColorAt(1.0, QColor(10, 12, 16, 130))
+            painter.fillRect(banner_rect, shade)
+        else:
+            tint = self._banner_color if self._banner_color is not None else self._accent
+            grad = QLinearGradient(0, 0, self.width(), self.BANNER)
+            c_top = QColor(tint)
+            c_top.setAlpha(215 if self._banner_color is not None else 95)
+            c_mid = QColor(DC_BANNER_BASE)
+            grad.setColorAt(0.0, c_top)
+            grad.setColorAt(0.65, c_mid)
+            grad.setColorAt(1.0, QColor("#151922"))
+            painter.fillRect(banner_rect, grad)
 
-        # Radial highlight in top-right of banner
-        radial = QRadialGradient(QPointF(self.width() * 0.85, 12), self.width() * 0.55)
-        glow_c = QColor(self._accent)
-        glow_c.setAlpha(70)
-        radial.setColorAt(0.0, glow_c)
-        glow_zero = QColor(self._accent)
-        glow_zero.setAlpha(0)
-        radial.setColorAt(1.0, glow_zero)
-        painter.fillRect(banner_rect, radial)
+            # Radial highlight in top-right of banner
+            radial = QRadialGradient(QPointF(self.width() * 0.85, 12), self.width() * 0.55)
+            glow_c = QColor(tint)
+            glow_c.setAlpha(70)
+            radial.setColorAt(0.0, glow_c)
+            glow_zero = QColor(tint)
+            glow_zero.setAlpha(0)
+            radial.setColorAt(1.0, glow_zero)
+            painter.fillRect(banner_rect, radial)
 
         # Bottom banner hairline
         painter.setPen(QPen(QColor(255, 255, 255, 24), 1))
@@ -230,9 +266,31 @@ class ProfileHeader(QWidget):
         painter.setBrush(av_grad)
         painter.drawEllipse(QPointF(cx, cy), self.AVATAR / 2, self.AVATAR / 2)
 
-        painter.setPen(QColor(DC_TEXT))
-        painter.setFont(ui_font(28, QFont.Weight.Bold))
-        painter.drawText(QRectF(cx - 40, cy - 40, 80, 80), Qt.AlignmentFlag.AlignCenter, self._initial)
+        if self._avatar is not None and not self._avatar.isNull():
+            circle = QPainterPath()
+            circle.addEllipse(QPointF(cx, cy), self.AVATAR / 2 - 1, self.AVATAR / 2 - 1)
+            painter.save()
+            painter.setClipPath(circle)
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            avatar_scaled = self._avatar.scaled(
+                self.AVATAR,
+                self.AVATAR,
+                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            painter.drawPixmap(
+                int(cx - self.AVATAR / 2) - (avatar_scaled.width() - self.AVATAR) // 2,
+                int(cy - self.AVATAR / 2) - (avatar_scaled.height() - self.AVATAR) // 2,
+                avatar_scaled,
+            )
+            painter.restore()
+            painter.setPen(ring_pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(QPointF(cx, cy), self.AVATAR / 2, self.AVATAR / 2)
+        else:
+            painter.setPen(QColor(DC_TEXT))
+            painter.setFont(ui_font(28, QFont.Weight.Bold))
+            painter.drawText(QRectF(cx - 40, cy - 40, 80, 80), Qt.AlignmentFlag.AlignCenter, self._initial)
 
         # Status dot with outer cutout frame and radial glow
         dot = QPointF(cx + self.AVATAR / 2 - 8, cy + self.AVATAR / 2 - 8)
@@ -444,6 +502,8 @@ class DiscordPreview(QWidget):
         self._connection = ("disconnected", "")
         self._resolution: Resolution | None = None
         self._buttons: list[QPushButton] = []
+        self._avatar_url = ""
+        self._banner_url = ""
 
         self._card = QFrame(objectName="DiscordCard")
         self._card_shadow = QGraphicsDropShadowEffect(self._card)
@@ -575,6 +635,34 @@ class DiscordPreview(QWidget):
         self._header.set_name(clean_name)
         self._name_label.setText(clean_name)
         self._handle_label.setText(f"{clean_handle} \u00b7 OmniPresence Engine")
+
+    def set_profile_assets(self, profile: dict) -> None:
+        """Apply the Discord READY profile: async-load avatar and banner, set banner fallback color."""
+        if not profile:
+            return
+        avatar_url = str(profile.get("avatar_url") or "")
+        banner_url = str(profile.get("banner_url") or "")
+        self._avatar_url, self._banner_url = avatar_url, banner_url
+        self._header.set_banner_color(str(profile.get("color") or ""))
+        self._header.set_avatar(None)
+        self._header.set_banner(None)
+        self._load_remote_image(avatar_url, self._header.set_avatar, "_avatar_url")
+        self._load_remote_image(banner_url, self._header.set_banner, "_banner_url")
+
+    def _load_remote_image(self, url: str, apply, guard_attr: str) -> None:
+        if not url.lower().startswith("https://"):
+            return
+
+        def deliver(requested: str = url) -> None:
+            if getattr(self, guard_attr, "") != requested:
+                return  # a newer profile superseded this download
+            pixmap = image_cache().request(requested, deliver)
+            if pixmap is not None and not pixmap.isNull():
+                apply(pixmap)
+
+        cached = image_cache().request(url, deliver)
+        if cached is not None and not cached.isNull():
+            apply(cached)
 
     def set_paused(self, paused: bool) -> None:
         self._paused = paused

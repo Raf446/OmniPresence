@@ -18,7 +18,7 @@ from PySide6.QtGui import (
     QRadialGradient,
 )
 
-# Obsidian Glass v2.3.2 layered palette
+# Obsidian Glass v2.4 layered palette
 BG = "#0D1117"
 SURFACE = "#161B22"
 SURFACE_RAISED = "#1A212C"

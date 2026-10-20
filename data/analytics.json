@@ -1,212 +1,20 @@
 {
-  "date": "2026-10-18",
+  "date": "2026-10-20",
   "totals": {
-    "Coding": 79.02,
-    "Media": 1155.69,
+    "Coding": 0.0,
+    "Media": 123.41,
     "Gaming": 0.0,
-    "Browsing": 12.26,
-    "Idle": 666.55
+    "Browsing": 0.0,
+    "Idle": 0.0
   },
   "sessions": [
     {
       "category": "Media",
-      "headline": "Titik Nadir (feat. Monita Tahalea) • by Kahitna",
+      "headline": "Let Me Down Slowly • by Alec Benjamin",
       "rule_id": "spotify",
-      "started_at": 1792330315.68,
-      "updated_at": 1792330460.78,
-      "duration_seconds": 146.11
-    },
-    {
-      "category": "Idle",
-      "headline": "CPU: 0% • RAM: 11.5 / 14 GB • 24°C • Clear Night",
-      "rule_id": "idle-standby",
-      "started_at": 1792330314.47,
-      "updated_at": 1792330315.48,
-      "duration_seconds": 4.88
-    },
-    {
-      "category": "Media",
-      "headline": "Hati-Hati di Jalan • by Tulus",
-      "rule_id": "spotify",
-      "started_at": 1792328139.23,
-      "updated_at": 1792328218.98,
-      "duration_seconds": 70.06
-    },
-    {
-      "category": "Idle",
-      "headline": "CPU: 31% • RAM: 12.2 / 14 GB • 27°C • Partly Cloudy",
-      "rule_id": "idle-standby",
-      "started_at": 1792328137.33,
-      "updated_at": 1792328138.86,
-      "duration_seconds": 2.51
-    },
-    {
-      "category": "Media",
-      "headline": "Sepenuh Hati • by Rony Parulian",
-      "rule_id": "spotify",
-      "started_at": 1792328123.84,
-      "updated_at": 1792328136.83,
-      "duration_seconds": 13.98
-    },
-    {
-      "category": "Idle",
-      "headline": "CPU: 23% • RAM: 12.2 / 14 GB • 27°C • Partly Cloudy",
-      "rule_id": "idle-standby",
-      "started_at": 1792328123.19,
-      "updated_at": 1792328123.81,
-      "duration_seconds": 1.61
-    },
-    {
-      "category": "Media",
-      "headline": "Sepenuh Hati • by Rony Parulian",
-      "rule_id": "spotify",
-      "started_at": 1792311571.85,
-      "updated_at": 1792328122.69,
-      "duration_seconds": 309.33
-    },
-    {
-      "category": "Browsing",
-      "headline": "OmniPresence • by @Raf446",
-      "rule_id": "browser-github",
-      "started_at": 1792311570.61,
-      "updated_at": 1792311571.61,
-      "duration_seconds": 2.0
-    },
-    {
-      "category": "Media",
-      "headline": "Janji Suci • by Yovie & Nuno",
-      "rule_id": "spotify",
-      "started_at": 1792311559.74,
-      "updated_at": 1792311570.51,
-      "duration_seconds": 11.77
-    },
-    {
-      "category": "Browsing",
-      "headline": "OmniPresence • by @Raf446",
-      "rule_id": "browser-github",
-      "started_at": 1792311548.11,
-      "updated_at": 1792311559.22,
-      "duration_seconds": 12.11
-    },
-    {
-      "category": "Media",
-      "headline": "Janji Suci • by Yovie & Nuno",
-      "rule_id": "spotify",
-      "started_at": 1792310105.97,
-      "updated_at": 1792311548.04,
-      "duration_seconds": 119.15
-    },
-    {
-      "category": "Coding",
-      "headline": "Away from Keyboard • Standby • Back Soon",
-      "rule_id": "manual-override",
-      "started_at": 1792310101.04,
-      "updated_at": 1792310105.44,
-      "duration_seconds": 5.39
-    },
-    {
-      "category": "Media",
-      "headline": "Bunuh Idolamu • by Hindia",
-      "rule_id": "spotify",
-      "started_at": 1792310098.46,
-      "updated_at": 1792310100.45,
-      "duration_seconds": 3.0
-    },
-    {
-      "category": "Idle",
-      "headline": "CPU: 12% • RAM: 9.3 / 14 GB • 30°C • Drizzle",
-      "rule_id": "idle-standby",
-      "started_at": 1792310098.23,
-      "updated_at": 1792310098.43,
-      "duration_seconds": 1.2
-    },
-    {
-      "category": "Media",
-      "headline": "Bunuh Idolamu • by Hindia",
-      "rule_id": "spotify",
-      "started_at": 1792310081.32,
-      "updated_at": 1792310097.54,
-      "duration_seconds": 17.22
-    },
-    {
-      "category": "Idle",
-      "headline": "CPU: 10% • RAM: 9.3 / 14 GB • 30°C • Drizzle",
-      "rule_id": "idle-standby",
-      "started_at": 1792310080.67,
-      "updated_at": 1792310080.67,
-      "duration_seconds": 1.0
-    },
-    {
-      "category": "Coding",
-      "headline": "Away from Desk • Stealth Mode Active • Session Locked • Privacy Shield Engaged",
-      "rule_id": "manual-override",
-      "started_at": 1792310072.36,
-      "updated_at": 1792310080.45,
-      "duration_seconds": 9.09
-    },
-    {
-      "category": "Idle",
-      "headline": "CPU: 12% • RAM: 9.2 / 14 GB • 30°C • Drizzle",
-      "rule_id": "idle-standby",
-      "started_at": 1792310071.8,
-      "updated_at": 1792310071.94,
-      "duration_seconds": 1.16
-    },
-    {
-      "category": "Coding",
-      "headline": "Away from Desk • Stealth Mode Active • Session Locked • Privacy Shield Engaged",
-      "rule_id": "manual-override",
-      "started_at": 1792310069.19,
-      "updated_at": 1792310070.93,
-      "duration_seconds": 2.75
-    },
-    {
-      "category": "Idle",
-      "headline": "CPU: 12% • RAM: 9.2 / 14 GB • 30°C • Drizzle",
-      "rule_id": "idle-standby",
-      "started_at": 1792310037.62,
-      "updated_at": 1792310068.91,
-      "duration_seconds": 32.28
-    },
-    {
-      "category": "Coding",
-      "headline": "Away from Desk • Stealth Mode Active • Session Locked • Privacy Shield Engaged",
-      "rule_id": "manual-override",
-      "started_at": 1792310024.89,
-      "updated_at": 1792310037.58,
-      "duration_seconds": 13.7
-    },
-    {
-      "category": "Idle",
-      "headline": "CPU: 20% • RAM: 9.3 / 14 GB • 32°C • Overcast",
-      "rule_id": "idle-standby",
-      "started_at": 1792310014.62,
-      "updated_at": 1792310024.83,
-      "duration_seconds": 11.2
-    },
-    {
-      "category": "Coding",
-      "headline": "Away from Desk • Stealth Mode Active • Session Locked • Privacy Shield Engaged",
-      "rule_id": "manual-override",
-      "started_at": 1792309999.48,
-      "updated_at": 1792310014.52,
-      "duration_seconds": 16.05
-    },
-    {
-      "category": "Media",
-      "headline": "Bunuh Idolamu • by Hindia",
-      "rule_id": "spotify",
-      "started_at": 1792309992.7,
-      "updated_at": 1792309998.59,
-      "duration_seconds": 6.89
-    },
-    {
-      "category": "Coding",
-      "headline": "Away from Keyboard • Standby • Back Soon",
-      "rule_id": "manual-override",
-      "started_at": 1792309991.65,
-      "updated_at": 1792309992.5,
-      "duration_seconds": 1.84
+      "started_at": 1792458045.18,
+      "updated_at": 1792458164.32,
+      "duration_seconds": 123.41
     }
   ],
   "days": {
@@ -445,6 +253,58 @@
         }
       ],
       "updated_at": "2026-10-18T20:34:20"
+    },
+    "2026-10-19": {
+      "totals": {
+        "Coding": 0.0,
+        "Media": 6.91,
+        "Gaming": 0.0,
+        "Browsing": 0.0,
+        "Idle": 4.09
+      },
+      "total_active_seconds": 6.91,
+      "total_tracked_seconds": 11.0,
+      "sessions": [
+        {
+          "category": "Media",
+          "headline": "Titanium (feat. Sia) • by David Guetta",
+          "rule_id": "spotify",
+          "started_at": 1792421970.51,
+          "updated_at": 1792421977.1,
+          "duration_seconds": 7.59
+        },
+        {
+          "category": "Idle",
+          "headline": "CPU: 0% • RAM: 10.6 / 15 GB • 24°C • Clear Night",
+          "rule_id": "idle-standby",
+          "started_at": 1792421970.2,
+          "updated_at": 1792421970.2,
+          "duration_seconds": 4.09
+        }
+      ],
+      "updated_at": "2026-10-19T21:59:37"
+    },
+    "2026-10-20": {
+      "totals": {
+        "Coding": 0.0,
+        "Media": 123.41,
+        "Gaming": 0.0,
+        "Browsing": 0.0,
+        "Idle": 0.0
+      },
+      "total_active_seconds": 123.41,
+      "total_tracked_seconds": 123.41,
+      "sessions": [
+        {
+          "category": "Media",
+          "headline": "Let Me Down Slowly • by Alec Benjamin",
+          "rule_id": "spotify",
+          "started_at": 1792458045.18,
+          "updated_at": 1792458164.32,
+          "duration_seconds": 123.41
+        }
+      ],
+      "updated_at": "2026-10-20T08:02:48"
     }
   }
 }

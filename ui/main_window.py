@@ -1,4 +1,4 @@
-"""Frameless Obsidian Glass main window (v2.3.2) with Collapsible Sidebar + 5-page AnimatedStackedWidget."""
+"""Frameless Obsidian Glass main window (v2.4) with Collapsible Sidebar + 5-page AnimatedStackedWidget."""
 from __future__ import annotations
 
 import html
@@ -498,7 +498,7 @@ class ActivityLogPanel(QFrame):
 
 
 class SettingsPage(QScrollArea):
-    """Page 4 (Settings): Discord Gateway Configuration + 3 v2.3.2 Innovations + General Preferences."""
+    """Page 4 (Settings): Discord Gateway Configuration + 3 v2.4 Innovations + General Preferences."""
 
     def __init__(self, state: StateManager, parent=None) -> None:
         super().__init__(parent, objectName="SettingsScrollArea")
@@ -1669,6 +1669,9 @@ class MainWindow(QMainWindow):
         state.custom_rpc_changed.connect(self._custom_rpc.set_custom_rpc_state)
         state.client_id_changed.connect(self._controls.set_client_id_text)
         state.profile_changed.connect(self._preview.set_profile)
+        state.profile_updated.connect(self._preview.set_profile_assets)
+        if state.profile_data:
+            self._preview.set_profile_assets(state.profile_data)
         state.shield_changed.connect(self._on_shield_changed)
         state.settings_updated.connect(self._on_settings_updated)
         state.analytics_changed.connect(self._analytics_page.refresh_analytics)

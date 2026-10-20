@@ -9,8 +9,9 @@ import sys
 from pathlib import Path
 
 APP_NAME = "OmniPresence"
-APP_VERSION = "2.3.2"
-APP_VERSION_TUPLE = (2, 3, 1, 0)
+APP_VERSION = "2.4.0"
+APP_PRODUCT_VERSION = "2.4"
+APP_VERSION_TUPLE = (2, 4, 0, 0)
 APP_PUBLISHER = "Raf446"
 APP_DESCRIPTION = "OmniPresence - Autonomous Multi-Context Discord Rich Presence Engine"
 
@@ -143,7 +144,7 @@ VSVersionInfo(
         StringStruct('LegalCopyright', 'Copyright (c) 2026 {APP_PUBLISHER}'),
         StringStruct('OriginalFilename', '{APP_NAME}.exe'),
         StringStruct('ProductName', '{APP_NAME}'),
-        StringStruct('ProductVersion', '{APP_VERSION}'),
+        StringStruct('ProductVersion', '{APP_PRODUCT_VERSION}'),
         StringStruct('Publisher', '{APP_PUBLISHER}')])
       ]),
     VarFileInfo([VarStruct('Translation', [1033, 1200])])
@@ -215,6 +216,10 @@ def build_executable() -> int:
         "PySide6.QtNetwork",
         "--collect-submodules",
         "winsdk",
+        "--collect-submodules",
+        "extractors.media",
+        "--collect-submodules",
+        "extractors.telemetry",
         str(entry_script),
     ]
 

@@ -1,5 +1,7 @@
-"""Context extractors package: Git parser, compiler listener, SMTC media scrobbler, YouTube/GitHub resolvers, and telemetry."""
+"""Context extractors package: Git parser, compiler listener, cross-platform media extractors (Windows SMTC / Linux MPRIS2), YouTube/GitHub resolvers, and telemetry."""
 from __future__ import annotations
+
+import core  # noqa: F401  (fixes the core <-> extractors import order when extractors is imported first)
 
 from extractors.celestial_sync import (
     CELESTIAL_SYNC,
@@ -15,7 +17,7 @@ from extractors.celestial_sync import (
 from extractors.compiler_listener import BuildInfo, CompilerListener
 from extractors.git_extractor import GitExtractor, GitInfo
 from extractors.github_resolver import GITHUB_AVATAR_RESOLVER, GitHubAvatarResolver
-from extractors.media_scrobbler import MediaInfo, MediaScrobbler
+from extractors.media import MediaInfo, MediaScrobbler, create_media_extractor
 from extractors.mood_engine import MOOD_ENGINE, AdaptiveMoodEngine, MoodResult
 from extractors.telemetry import TelemetrySample, TelemetrySampler
 from extractors.youtube_resolver import YOUTUBE_THUMBNAIL_RESOLVER, YouTubeThumbnailResolver
@@ -41,6 +43,7 @@ __all__ = [
     "WeatherData",
     "YOUTUBE_THUMBNAIL_RESOLVER",
     "YouTubeThumbnailResolver",
+    "create_media_extractor",
     "fetch_weather",
     "geocode_city",
     "map_wmo_weather",

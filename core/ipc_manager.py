@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import random
 import struct
+import sys
 import threading
 import time
 from collections import deque
@@ -54,6 +56,128 @@ class _ConnectionLost(Exception):
     """The pipe broke or Discord stopped answering."""
 
 
+DISCORD_CDN = "https://cdn.discordapp.com"
+_LINUX_IPC_SUBDIRS = ("", "app/com.discordapp.Discord/", "snap.discord/", "app/com.discordapp.DiscordCanary/")
+
+
+def discord_ipc_candidates(
+    pipe: int | None = None,
+    platform: str | None = None,
+    env: dict[str, str] | None = None,
+) -> list[str]:
+    """Ordered Discord IPC endpoints: Windows named pipes, or Unix domain sockets under $XDG_RUNTIME_DIR."""
+    plat = platform or sys.platform
+    environ = os.environ if env is None else env
+    indices = [pipe] if pipe is not None else list(range(10))
+    if plat.startswith("win"):
+        return [rf"\\.\pipe\discord-ipc-{i}" for i in indices]
+
+    bases: list[str] = []
+    for var in ("XDG_RUNTIME_DIR", "TMPDIR", "TMP", "TEMP"):
+        value = (environ.get(var) or "").strip().rstrip("/")
+        if value and value not in bases:
+            bases.append(value)
+    if "/tmp" not in bases:
+        bases.append("/tmp")
+    return [f"{base}/{sub}discord-ipc-{i}" for base in bases for sub in _LINUX_IPC_SUBDIRS for i in indices]
+
+
+def resolve_ipc_path(
+    pipe: int | None = None,
+    platform: str | None = None,
+    env: dict[str, str] | None = None,
+    exists=os.path.exists,
+) -> str | None:
+    """Locate the live Discord IPC endpoint for the current OS (None when Discord is not running)."""
+    plat = platform or sys.platform
+    if not plat.startswith("win"):
+        for candidate in discord_ipc_candidates(pipe, plat, env):
+            if exists(candidate):
+                return candidate
+    return get_ipc_path(pipe)
+
+
+def _default_avatar_index(user_id: str) -> int:
+    try:
+        return (int(user_id) >> 22) % 6
+    except (TypeError, ValueError):
+        return 0
+
+
+def _hex_color(value: Any) -> str:
+    """Normalize Discord's int RGB or '#RRGGBB' / 'RRGGBB' strings to '#RRGGBB' ('' when invalid)."""
+    if value is None or isinstance(value, bool):
+        return ""
+    if isinstance(value, int):
+        return f"#{value & 0xFFFFFF:06X}" if value >= 0 else ""
+    text = str(value).strip().lstrip("#")
+    if len(text) == 6:
+        try:
+            int(text, 16)
+        except ValueError:
+            return ""
+        return f"#{text.upper()}"
+    return ""
+
+
+def extract_user_identity(user: Any) -> tuple[str, str]:
+    """Extract (display_name, handle) from Discord's READY user dictionary."""
+    if not isinstance(user, dict):
+        return "", ""
+    username = str(user.get("username") or "").strip()
+    global_name = str(user.get("global_name") or "").strip()
+    discriminator = str(user.get("discriminator") or "").strip()
+
+    display_name = global_name or username
+    if username:
+        if discriminator and discriminator != "0":
+            handle = f"@{username}#{discriminator}"
+        else:
+            handle = f"@{username}"
+    elif global_name:
+        handle = f"@{global_name.lower().replace(' ', '_')}"
+    else:
+        handle = ""
+    return display_name, handle
+
+
+def build_user_profile(user: Any) -> dict[str, str]:
+    """Build the full profile dict (identity, CDN avatar/banner URLs, banner fallback color) from READY."""
+    if not isinstance(user, dict):
+        return {}
+    user_id = str(user.get("id") or "").strip()
+    avatar = str(user.get("avatar") or "").strip()
+    banner = str(user.get("banner") or "").strip()
+
+    if avatar and user_id:
+        if avatar.startswith("a_"):
+            avatar_url = f"{DISCORD_CDN}/avatars/{user_id}/{avatar}.gif"
+        else:
+            avatar_url = f"{DISCORD_CDN}/avatars/{user_id}/{avatar}.png?size=256"
+    else:
+        avatar_url = f"{DISCORD_CDN}/embed/avatars/{_default_avatar_index(user_id)}.png"
+    banner_url = f"{DISCORD_CDN}/banners/{user_id}/{banner}.png?size=600" if (banner and user_id) else ""
+
+    accent = _hex_color(user.get("accent_color"))
+    banner_color = _hex_color(user.get("banner_color"))
+    display_name, handle = extract_user_identity(user)
+    return {
+        "id": user_id,
+        "username": str(user.get("username") or "").strip(),
+        "global_name": str(user.get("global_name") or "").strip(),
+        "discriminator": str(user.get("discriminator") or "").strip(),
+        "display_name": display_name,
+        "handle": handle,
+        "avatar": avatar,
+        "avatar_url": avatar_url,
+        "banner": banner,
+        "banner_url": banner_url,
+        "accent_color": accent,
+        "banner_color": banner_color,
+        "color": banner_color or accent,
+    }
+
+
 class _HandshakeAwarePresence(AioPresence):
     """Subclasses AioPresence to capture the READY payload (including active Discord user info) during IPC handshake."""
 
@@ -62,7 +186,7 @@ class _HandshakeAwarePresence(AioPresence):
         self.ready_user: dict[str, Any] = {}
 
     async def handshake(self) -> None:
-        ipc_path = get_ipc_path(self.pipe)
+        ipc_path = resolve_ipc_path(self.pipe)
         if not ipc_path:
             raise DiscordNotFound
 
@@ -95,6 +219,7 @@ class IPCManager(QThread):
     message = Signal(str, str)
     presence_sent = Signal(object)
     user_detected = Signal(str, str)
+    user_profile_updated = Signal(dict)
 
     # Discord allows up to 5 RPC updates per 20s window (1 update per 5.0s sustained).
     # Aligned with the 5.0s (5000ms) MediaScrobbler polling rhythm so updates flow without queue buildup.
@@ -147,23 +272,12 @@ class IPCManager(QThread):
     @staticmethod
     def extract_user_identity(user: MappingOrDict) -> tuple[str, str]:
         """Extract (display_name, handle) from Discord's READY user dictionary."""
-        if not isinstance(user, dict):
-            return "", ""
-        username = str(user.get("username") or "").strip()
-        global_name = str(user.get("global_name") or "").strip()
-        discriminator = str(user.get("discriminator") or "").strip()
+        return extract_user_identity(user)
 
-        display_name = global_name or username
-        if username:
-            if discriminator and discriminator != "0":
-                handle = f"@{username}#{discriminator}"
-            else:
-                handle = f"@{username}"
-        elif global_name:
-            handle = f"@{global_name.lower().replace(' ', '_')}"
-        else:
-            handle = ""
-        return display_name, handle
+    @staticmethod
+    def build_user_profile(user: MappingOrDict) -> dict[str, str]:
+        """Full profile (identity + CDN avatar/banner + banner color) from Discord's READY user object."""
+        return build_user_profile(user)
 
     def submit(self, presence: PresenceData | None) -> None:
         """Store the latest presence in pending_activity buffer and wake the IPC worker immediately."""
@@ -298,6 +412,9 @@ class IPCManager(QThread):
 
             backoff.reset()
             display_name, handle = self.extract_user_identity(rpc.ready_user)
+            profile = self.build_user_profile(rpc.ready_user)
+            if profile:
+                self.user_profile_updated.emit(profile)
             if display_name or handle:
                 self.user_detected.emit(display_name, handle)
                 self._set_status(ConnectionState.CONNECTED, f"Connected ({handle or display_name})")
@@ -383,6 +500,27 @@ class IPCManager(QThread):
                 timeout = self.HEARTBEAT_SECONDS - (now - last_io)
             await self._sleep(min(max(timeout, 0.05), self.LIVENESS_CHECK_SECONDS))
 
+    @staticmethod
+    def _fallback_chain(presence: PresenceData) -> list[tuple[str, PresenceData]]:
+        """Progressively simpler variants: drop buttons first, then swap external artwork for a bundled icon."""
+        chain: list[tuple[str, PresenceData]] = []
+        current = presence
+        if current.buttons:
+            current = replace(current, buttons=())
+            chain.append(("without buttons", current))
+        if current.large_image and current.large_image.lower().startswith(("http://", "https://")):
+            if "youtube" in current.rule_id:
+                icon = "youtube"
+            elif "github" in current.rule_id:
+                icon = "github"
+            elif "spotify" in current.rule_id:
+                icon = "spotify"
+            else:
+                icon = "music_placeholder"
+            current = replace(current, large_image=icon)
+            chain.append((f"with fallback icon ({icon})", current))
+        return chain
+
     async def _push(self, rpc: AioPresence, presence: PresenceData | None) -> None:
         try:
             if presence is None:
@@ -391,22 +529,8 @@ class IPCManager(QThread):
             await self._update(rpc, presence)
         except ServerError as exc:
             if presence is not None:
-                fallback = presence
-                if fallback.buttons:
-                    self.message.emit("warn", f"Discord rejected the presence ({exc}), retrying without buttons")
-                    fallback = replace(fallback, buttons=())
-                elif fallback.large_image and fallback.large_image.lower().startswith(("http://", "https://")):
-                    self.message.emit("warn", f"Discord rejected external artwork URL ({exc}), using fallback icon")
-                    if "youtube" in fallback.rule_id:
-                        fallback_icon = "youtube"
-                    elif "github" in fallback.rule_id:
-                        fallback_icon = "github"
-                    elif "spotify" in fallback.rule_id:
-                        fallback_icon = "spotify"
-                    else:
-                        fallback_icon = "music_placeholder"
-                    fallback = replace(fallback, large_image=fallback_icon)
-                if fallback != presence:
+                for stage, fallback in self._fallback_chain(presence):
+                    self.message.emit("warn", f"Discord rejected the presence ({exc}), retrying {stage}")
                     try:
                         await self._update(rpc, fallback)
                         return

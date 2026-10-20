@@ -20,6 +20,7 @@ from extractors.github_resolver import (
     GITHUB_AVATAR_RESOLVER,
     extract_github_owner,
 )
+from extractors.media.links import build_genius_url, build_media_buttons, build_spotify_url
 from extractors.mood_engine import MOOD_ENGINE
 from extractors.youtube_resolver import YOUTUBE_THUMBNAIL_RESOLVER
 
@@ -811,6 +812,9 @@ class PriorityEngine:
                     "artwork_url": valid_art,
                     "app_label": book.media_label(media.app_id),
                     "query": f"{media.title} {media.artist}".strip(),
+                    "track_url": getattr(media, "track_url", "") or "",
+                    "spotify_url": build_spotify_url(media.title, media.artist, getattr(media, "track_url", "") or ""),
+                    "genius_url": build_genius_url(media.title, media.artist),
                 }
                 key = render(rule.session_key, variables) if rule.session_key else None
                 media_activity = Activity(rule.id, key or media.title, variables, media.start_at, media.end_at)
@@ -1035,6 +1039,17 @@ class PriorityEngine:
                 buttons.append((label, url))
 
         clean_buttons = sanitize_buttons(buttons)
+        if rule.kind == "media" and self.show_buttons and "spotify" in rule.id:
+            # Smart interactive buttons always win for Spotify, even when a legacy rules.json is installed.
+            smart = sanitize_buttons(
+                build_media_buttons(
+                    variables.get("track", ""),
+                    variables.get("artist", ""),
+                    variables.get("track_url", ""),
+                )
+            )
+            if smart:
+                clean_buttons = smart
         details_text = render_first(spec.details, variables)
         state_text = render_first(spec.state, variables)
         large_image = render_first(spec.large_image, variables)
@@ -1094,7 +1109,7 @@ class PriorityEngine:
 
             details_text = f"CPU: {cpu_pct}% \u2022 RAM: {ram_used:.1f} / {ram_total:.0f} GB"
             small_image = "cpu_chip" if cpu_pct >= 50 else "ram_chip"
-            small_text = "OmniPresence v2.3.2"
+            small_text = "OmniPresence v2.4"
 
             live_settings = SETTINGS_MANAGER.settings
             show_city = (

@@ -15,7 +15,7 @@ from core.privacy_shield import PRIVACY_SHIELD
 from core.process_watcher import ProcessWatcher
 from core.settings_manager import SettingsManager
 from core.state_manager import Settings, StateManager
-from extractors.media_scrobbler import MediaScrobbler
+from extractors.media import create_media_extractor
 from ui import app_icon, resource_path, runtime_config_dir
 from ui.main_window import MainWindow
 from ui.tray_manager import TrayManager
@@ -60,7 +60,7 @@ def _parse_smoke_arg(raw: str) -> float:
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="OmniPresence Discord Rich Presence Engine v2.3.2")
+    parser = argparse.ArgumentParser(description="OmniPresence Discord Rich Presence Engine v2.4")
     parser.add_argument("--minimized", action="store_true", help="Start hidden in the system tray")
     parser.add_argument("--client-id", type=str, default="", help="Override Discord Application ID")
     parser.add_argument(
@@ -77,7 +77,7 @@ def main(argv: list[str] | None = None) -> int:
 
     app = QApplication(sys.argv)
     app.setApplicationName("OmniPresence")
-    app.setApplicationVersion("2.3.2")
+    app.setApplicationVersion("2.4")
     app.setOrganizationName("Raf446")
     app.setQuitOnLastWindowClosed(False)
     app.setWindowIcon(app_icon("disconnected"))
@@ -108,7 +108,7 @@ def main(argv: list[str] | None = None) -> int:
 
     state = StateManager(settings, rules_path, rulebook, rule_error, privacy_shield=PRIVACY_SHIELD)
     state.settings_updated.connect(lambda s: _sync_autostart(s.auto_start, script_file))
-    state.log("info", "boot", f"OmniPresence v2.3.2 initialized ({len(rulebook.rules)} rules loaded)")
+    state.log("info", "boot", f"OmniPresence v2.4 initialized ({len(rulebook.rules)} rules loaded)")
     if rule_error:
         state.log("error", "rules", rule_error)
 
@@ -117,7 +117,7 @@ def main(argv: list[str] | None = None) -> int:
         interval=settings.polling_interval,
         build_linger=settings.build_linger_seconds,
     )
-    scrobbler = MediaScrobbler(preferred_apps=settings.media_preferred_apps)
+    scrobbler = create_media_extractor(preferred_apps=settings.media_preferred_apps)
     ipc = IPCManager(client_id=settings.get_active_client_id())
 
     # Connect worker outputs -> StateManager
@@ -129,6 +129,7 @@ def main(argv: list[str] | None = None) -> int:
     ipc.message.connect(state.on_ipc_message)
     ipc.presence_sent.connect(state.on_presence_sent)
     ipc.user_detected.connect(state.on_ipc_user)
+    ipc.user_profile_updated.connect(state.on_ipc_profile)
 
     # Connect StateManager -> workers
     state.outgoing_changed.connect(ipc.submit)

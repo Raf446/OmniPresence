@@ -49,6 +49,7 @@ class StateManager(QObject):
     custom_rpc_changed = Signal(bool, object)
     client_id_changed = Signal(str)
     profile_changed = Signal(str, str)
+    profile_updated = Signal(dict)
     shield_changed = Signal(bool)
     settings_updated = Signal(object)
     analytics_changed = Signal(object)
@@ -90,6 +91,7 @@ class StateManager(QObject):
         self.paused = False
 
         self._ipc_profile: tuple[str, str] = ("", "")
+        self._ipc_profile_data: dict = {}
         self._activities: tuple = ()
         self._media = None
         self._manual: CustomRPCConfig | None = None
@@ -141,6 +143,11 @@ class StateManager(QObject):
     @property
     def shield_active(self) -> bool:
         return bool(self._shield_active and self.settings.privacy_shield_enabled)
+
+    @property
+    def profile_data(self) -> dict:
+        """Last full Discord profile received from IPC READY (empty until connected)."""
+        return dict(self._ipc_profile_data)
 
     @property
     def profile(self) -> tuple[str, str]:
@@ -264,6 +271,13 @@ class StateManager(QObject):
         if updated != self._ipc_profile:
             self._ipc_profile = updated
             self.profile_changed.emit(*self.profile)
+
+    @Slot(dict)
+    def on_ipc_profile(self, profile: dict) -> None:
+        """Forward the full Discord profile (avatar/banner CDN URLs, accent color) to the UI."""
+        if profile:
+            self._ipc_profile_data = dict(profile)
+            self.profile_updated.emit(self._ipc_profile_data)
 
     @Slot(str, str)
     def on_connection(self, status: str, detail: str) -> None:
