@@ -1,20 +1,212 @@
 {
-  "date": "2026-10-20",
+  "date": "2026-10-24",
   "totals": {
-    "Coding": 0.0,
-    "Media": 123.41,
-    "Gaming": 0.0,
-    "Browsing": 0.0,
-    "Idle": 0.0
+    "Coding": 6066.6,
+    "Media": 6595.83,
+    "Gaming": 1856.45,
+    "Browsing": 127.77,
+    "Idle": 504.41
   },
   "sessions": [
     {
       "category": "Media",
-      "headline": "Let Me Down Slowly • by Alec Benjamin",
+      "headline": "All I Need To Hear • by The 1975",
       "rule_id": "spotify",
-      "started_at": 1792458045.18,
-      "updated_at": 1792458164.32,
-      "duration_seconds": 123.41
+      "started_at": 1792853315.25,
+      "updated_at": 1792853344.17,
+      "duration_seconds": 29.92
+    },
+    {
+      "category": "Media",
+      "headline": "Clannad BD - 01 • VLC Media Player",
+      "rule_id": "vlc-video",
+      "started_at": 1792853238.71,
+      "updated_at": 1792853315.0,
+      "duration_seconds": 77.3
+    },
+    {
+      "category": "Media",
+      "headline": "All I Need To Hear • by The 1975",
+      "rule_id": "spotify",
+      "started_at": 1792853231.14,
+      "updated_at": 1792853238.5,
+      "duration_seconds": 8.36
+    },
+    {
+      "category": "Idle",
+      "headline": "CPU: 0% • RAM: 9.8 / 15 GB • 24°C • Clear Night",
+      "rule_id": "idle-standby",
+      "started_at": 1792853228.99,
+      "updated_at": 1792853231.07,
+      "duration_seconds": 5.24
+    },
+    {
+      "category": "Media",
+      "headline": "[Paused] Clannad BD - 01 • VLC Media Player",
+      "rule_id": "vlc-video",
+      "started_at": 1792852953.61,
+      "updated_at": 1792852953.61,
+      "duration_seconds": 1.0
+    },
+    {
+      "category": "Idle",
+      "headline": "CPU: 14% • RAM: 10.1 / 15 GB • No active context",
+      "rule_id": "idle-standby",
+      "started_at": 1792852953.57,
+      "updated_at": 1792852953.57,
+      "duration_seconds": 1.0
+    },
+    {
+      "category": "Media",
+      "headline": "Clannad BD - 01 • VLC Media Player",
+      "rule_id": "vlc-video",
+      "started_at": 1792852953.43,
+      "updated_at": 1792852953.5,
+      "duration_seconds": 1.08
+    },
+    {
+      "category": "Idle",
+      "headline": "CPU: 16% • RAM: 10.1 / 15 GB • No active context",
+      "rule_id": "idle-standby",
+      "started_at": 1792852953.34,
+      "updated_at": 1792852953.34,
+      "duration_seconds": 1.0
+    },
+    {
+      "category": "Media",
+      "headline": "Clannad BD - 01 • VLC Media Player",
+      "rule_id": "vlc-video",
+      "started_at": 1792852953.19,
+      "updated_at": 1792852953.27,
+      "duration_seconds": 1.08
+    },
+    {
+      "category": "Idle",
+      "headline": "CPU: 18% • RAM: 10.1 / 15 GB • No active context",
+      "rule_id": "idle-standby",
+      "started_at": 1792852953.1,
+      "updated_at": 1792852953.1,
+      "duration_seconds": 1.03
+    },
+    {
+      "category": "Media",
+      "headline": "Clannad BD - 01 • VLC Media Player",
+      "rule_id": "vlc-video",
+      "started_at": 1792852952.07,
+      "updated_at": 1792852952.07,
+      "duration_seconds": 1.0
+    },
+    {
+      "category": "Idle",
+      "headline": "CPU: 42% • RAM: 10.1 / 15 GB • No active context",
+      "rule_id": "idle-standby",
+      "started_at": 1792852952.0,
+      "updated_at": 1792852952.0,
+      "duration_seconds": 1.0
+    },
+    {
+      "category": "Coding",
+      "headline": "Editing ipc_manager.py • Visual Studio Code",
+      "rule_id": "vscode",
+      "started_at": 1792852951.97,
+      "updated_at": 1792852951.98,
+      "duration_seconds": 1.0
+    },
+    {
+      "category": "Media",
+      "headline": "Midnight City • by M83",
+      "rule_id": "spotify",
+      "started_at": 1792852951.97,
+      "updated_at": 1792852951.97,
+      "duration_seconds": 1.0
+    },
+    {
+      "category": "Idle",
+      "headline": "CPU: 50% • RAM: 10.1 / 15 GB • No active context",
+      "rule_id": "idle-standby",
+      "started_at": 1792852951.97,
+      "updated_at": 1792852951.97,
+      "duration_seconds": 1.0
+    },
+    {
+      "category": "Media",
+      "headline": "System Design Interview • Watching on YouTube",
+      "rule_id": "browser-youtube",
+      "started_at": 1792852951.96,
+      "updated_at": 1792852951.96,
+      "duration_seconds": 1.0
+    },
+    {
+      "category": "Media",
+      "headline": "Interstellar • VLC Media Player",
+      "rule_id": "vlc-video",
+      "started_at": 1792852951.94,
+      "updated_at": 1792852951.96,
+      "duration_seconds": 1.03
+    },
+    {
+      "category": "Coding",
+      "headline": "Editing ipc_manager.py • Visual Studio Code",
+      "rule_id": "vscode",
+      "started_at": 1792852951.93,
+      "updated_at": 1792852951.93,
+      "duration_seconds": 1.0
+    },
+    {
+      "category": "Idle",
+      "headline": "CPU: 36% • RAM: 10.1 / 15 GB • No active context",
+      "rule_id": "idle-standby",
+      "started_at": 1792852951.93,
+      "updated_at": 1792852951.93,
+      "duration_seconds": 1.11
+    },
+    {
+      "category": "Media",
+      "headline": "Oceans & Engines • by NIKI",
+      "rule_id": "spotify",
+      "started_at": 1792851586.43,
+      "updated_at": 1792851586.43,
+      "duration_seconds": 1.0
+    },
+    {
+      "category": "Media",
+      "headline": "[Paused] Clannad BD - 01 • VLC Media Player",
+      "rule_id": "vlc-video",
+      "started_at": 1792851500.21,
+      "updated_at": 1792851586.28,
+      "duration_seconds": 87.06
+    },
+    {
+      "category": "Media",
+      "headline": "Oceans & Engines • by NIKI",
+      "rule_id": "spotify",
+      "started_at": 1792851468.19,
+      "updated_at": 1792851500.14,
+      "duration_seconds": 32.95
+    },
+    {
+      "category": "Idle",
+      "headline": "CPU: 0% • RAM: 10.2 / 15 GB • 24°C • Clear Night",
+      "rule_id": "idle-standby",
+      "started_at": 1792851466.52,
+      "updated_at": 1792851467.53,
+      "duration_seconds": 3.39
+    },
+    {
+      "category": "Media",
+      "headline": "Clannad BD - 01 • VLC Media Player",
+      "rule_id": "vlc-video",
+      "started_at": 1792851231.78,
+      "updated_at": 1792851231.78,
+      "duration_seconds": 1.0
+    },
+    {
+      "category": "Idle",
+      "headline": "CPU: 14% • RAM: 10.9 / 15 GB • No active context",
+      "rule_id": "idle-standby",
+      "started_at": 1792851231.7,
+      "updated_at": 1792851231.7,
+      "duration_seconds": 1.0
     }
   ],
   "days": {
@@ -305,6 +497,220 @@
         }
       ],
       "updated_at": "2026-10-20T08:02:48"
+    },
+    "2026-10-24": {
+      "totals": {
+        "Coding": 6066.6,
+        "Media": 6595.83,
+        "Gaming": 1856.45,
+        "Browsing": 127.77,
+        "Idle": 504.41
+      },
+      "total_active_seconds": 14646.65,
+      "total_tracked_seconds": 15151.06,
+      "sessions": [
+        {
+          "category": "Media",
+          "headline": "All I Need To Hear • by The 1975",
+          "rule_id": "spotify",
+          "started_at": 1792853315.25,
+          "updated_at": 1792853344.17,
+          "duration_seconds": 29.92
+        },
+        {
+          "category": "Media",
+          "headline": "Clannad BD - 01 • VLC Media Player",
+          "rule_id": "vlc-video",
+          "started_at": 1792853238.71,
+          "updated_at": 1792853315.0,
+          "duration_seconds": 77.3
+        },
+        {
+          "category": "Media",
+          "headline": "All I Need To Hear • by The 1975",
+          "rule_id": "spotify",
+          "started_at": 1792853231.14,
+          "updated_at": 1792853238.5,
+          "duration_seconds": 8.36
+        },
+        {
+          "category": "Idle",
+          "headline": "CPU: 0% • RAM: 9.8 / 15 GB • 24°C • Clear Night",
+          "rule_id": "idle-standby",
+          "started_at": 1792853228.99,
+          "updated_at": 1792853231.07,
+          "duration_seconds": 5.24
+        },
+        {
+          "category": "Media",
+          "headline": "[Paused] Clannad BD - 01 • VLC Media Player",
+          "rule_id": "vlc-video",
+          "started_at": 1792852953.61,
+          "updated_at": 1792852953.61,
+          "duration_seconds": 1.0
+        },
+        {
+          "category": "Idle",
+          "headline": "CPU: 14% • RAM: 10.1 / 15 GB • No active context",
+          "rule_id": "idle-standby",
+          "started_at": 1792852953.57,
+          "updated_at": 1792852953.57,
+          "duration_seconds": 1.0
+        },
+        {
+          "category": "Media",
+          "headline": "Clannad BD - 01 • VLC Media Player",
+          "rule_id": "vlc-video",
+          "started_at": 1792852953.43,
+          "updated_at": 1792852953.5,
+          "duration_seconds": 1.08
+        },
+        {
+          "category": "Idle",
+          "headline": "CPU: 16% • RAM: 10.1 / 15 GB • No active context",
+          "rule_id": "idle-standby",
+          "started_at": 1792852953.34,
+          "updated_at": 1792852953.34,
+          "duration_seconds": 1.0
+        },
+        {
+          "category": "Media",
+          "headline": "Clannad BD - 01 • VLC Media Player",
+          "rule_id": "vlc-video",
+          "started_at": 1792852953.19,
+          "updated_at": 1792852953.27,
+          "duration_seconds": 1.08
+        },
+        {
+          "category": "Idle",
+          "headline": "CPU: 18% • RAM: 10.1 / 15 GB • No active context",
+          "rule_id": "idle-standby",
+          "started_at": 1792852953.1,
+          "updated_at": 1792852953.1,
+          "duration_seconds": 1.03
+        },
+        {
+          "category": "Media",
+          "headline": "Clannad BD - 01 • VLC Media Player",
+          "rule_id": "vlc-video",
+          "started_at": 1792852952.07,
+          "updated_at": 1792852952.07,
+          "duration_seconds": 1.0
+        },
+        {
+          "category": "Idle",
+          "headline": "CPU: 42% • RAM: 10.1 / 15 GB • No active context",
+          "rule_id": "idle-standby",
+          "started_at": 1792852952.0,
+          "updated_at": 1792852952.0,
+          "duration_seconds": 1.0
+        },
+        {
+          "category": "Coding",
+          "headline": "Editing ipc_manager.py • Visual Studio Code",
+          "rule_id": "vscode",
+          "started_at": 1792852951.97,
+          "updated_at": 1792852951.98,
+          "duration_seconds": 1.0
+        },
+        {
+          "category": "Media",
+          "headline": "Midnight City • by M83",
+          "rule_id": "spotify",
+          "started_at": 1792852951.97,
+          "updated_at": 1792852951.97,
+          "duration_seconds": 1.0
+        },
+        {
+          "category": "Idle",
+          "headline": "CPU: 50% • RAM: 10.1 / 15 GB • No active context",
+          "rule_id": "idle-standby",
+          "started_at": 1792852951.97,
+          "updated_at": 1792852951.97,
+          "duration_seconds": 1.0
+        },
+        {
+          "category": "Media",
+          "headline": "System Design Interview • Watching on YouTube",
+          "rule_id": "browser-youtube",
+          "started_at": 1792852951.96,
+          "updated_at": 1792852951.96,
+          "duration_seconds": 1.0
+        },
+        {
+          "category": "Media",
+          "headline": "Interstellar • VLC Media Player",
+          "rule_id": "vlc-video",
+          "started_at": 1792852951.94,
+          "updated_at": 1792852951.96,
+          "duration_seconds": 1.03
+        },
+        {
+          "category": "Coding",
+          "headline": "Editing ipc_manager.py • Visual Studio Code",
+          "rule_id": "vscode",
+          "started_at": 1792852951.93,
+          "updated_at": 1792852951.93,
+          "duration_seconds": 1.0
+        },
+        {
+          "category": "Idle",
+          "headline": "CPU: 36% • RAM: 10.1 / 15 GB • No active context",
+          "rule_id": "idle-standby",
+          "started_at": 1792852951.93,
+          "updated_at": 1792852951.93,
+          "duration_seconds": 1.11
+        },
+        {
+          "category": "Media",
+          "headline": "Oceans & Engines • by NIKI",
+          "rule_id": "spotify",
+          "started_at": 1792851586.43,
+          "updated_at": 1792851586.43,
+          "duration_seconds": 1.0
+        },
+        {
+          "category": "Media",
+          "headline": "[Paused] Clannad BD - 01 • VLC Media Player",
+          "rule_id": "vlc-video",
+          "started_at": 1792851500.21,
+          "updated_at": 1792851586.28,
+          "duration_seconds": 87.06
+        },
+        {
+          "category": "Media",
+          "headline": "Oceans & Engines • by NIKI",
+          "rule_id": "spotify",
+          "started_at": 1792851468.19,
+          "updated_at": 1792851500.14,
+          "duration_seconds": 32.95
+        },
+        {
+          "category": "Idle",
+          "headline": "CPU: 0% • RAM: 10.2 / 15 GB • 24°C • Clear Night",
+          "rule_id": "idle-standby",
+          "started_at": 1792851466.52,
+          "updated_at": 1792851467.53,
+          "duration_seconds": 3.39
+        },
+        {
+          "category": "Media",
+          "headline": "Clannad BD - 01 • VLC Media Player",
+          "rule_id": "vlc-video",
+          "started_at": 1792851231.78,
+          "updated_at": 1792851231.78,
+          "duration_seconds": 1.0
+        },
+        {
+          "category": "Idle",
+          "headline": "CPU: 14% • RAM: 10.9 / 15 GB • No active context",
+          "rule_id": "idle-standby",
+          "started_at": 1792851231.7,
+          "updated_at": 1792851231.7,
+          "duration_seconds": 1.0
+        }
+      ],
+      "updated_at": "2026-10-24T21:49:04"
     }
   }
 }

@@ -13,6 +13,9 @@ from extractors.media.common import (
     TARGET_ARTWORK_SIZE,
     AlbumArtResolver,
     MediaInfo,
+    MEDIA_KIND_VIDEO,
+    SEEK_TOLERANCE_SECONDS,
+    STATUS_PLAYING,
     fallback_artwork_for_app,
     make_track_hash,
     sanitize_artist,
@@ -37,6 +40,17 @@ class RawTrack:
     end_at: float | None = None
     art_url: str = ""
     track_url: str = ""
+    status: str = STATUS_PLAYING
+    kind: str = ""
+
+    @property
+    def state_hash(self) -> str:
+        """Track identity that flips on track/title/artist/artwork change or Playing <-> Paused transition,
+        while ignoring linear playback time progression (time += 1).
+        """
+        suffix = "" if self.status == STATUS_PLAYING else f"\x00{self.status.lower()}"
+        art = f"\x00{self.art_url}" if self.art_url else ""
+        return make_track_hash(self.artist, f"{self.title}{suffix}{art}")
 
 
 class BaseMediaExtractor(QObject):
@@ -140,12 +154,14 @@ class BaseMediaExtractor(QObject):
             if raw is None:
                 self._publish(None)
                 return
-            track_hash = make_track_hash(raw.artist, raw.title)
+            track_hash = raw.state_hash
             with self._state_lock:
-                if track_hash == self._last_sent_hash and self._last_info is not None:
+                unchanged = track_hash == self._last_sent_hash and self._last_info is not None
+                if unchanged and not self._timeline_shifted(self._last_info, raw):
                     self._empty_ticks = 0
                     return
-            self._publish(self._build_info(raw, track_hash))
+            # New track, Playing <-> Paused transition, or a seek/stale timeline: always push a dirty update.
+            self._publish(self._build_info(raw, track_hash), force=True)
         finally:
             with self._state_lock:
                 self._polling = False
@@ -156,7 +172,15 @@ class BaseMediaExtractor(QObject):
             request_id = self._request_seq
 
         artwork = sanitize_artwork_url(raw.art_url)
-        if not artwork:
+        if not artwork and raw.kind == MEDIA_KIND_VIDEO:
+            try:
+                from extractors.media.poster_resolver import POSTER_RESOLVER
+
+                resolved = POSTER_RESOLVER.resolve_for_engine(raw.title)
+                artwork = sanitize_artwork_url(resolved)
+            except Exception:
+                artwork = ""
+        elif not artwork:
             cached, cached_url = self._art.get_cached(raw.artist, raw.title, raw.album)
             if cached:
                 artwork = sanitize_artwork_url(cached_url)
@@ -197,9 +221,27 @@ class BaseMediaExtractor(QObject):
             request_id=request_id,
             track_hash=track_hash,
             track_url=raw.track_url,
+            status=raw.status,
+            kind=raw.kind,
         )
 
-    def _publish(self, info: MediaInfo | None) -> None:
+    @staticmethod
+    def is_manual_seek(
+        current_position: float,
+        expected_position: float,
+        tolerance: float = SEEK_TOLERANCE_SECONDS,
+    ) -> bool:
+        """Return True when playback position jumped by more than `tolerance` seconds (default 2.0s)."""
+        return abs(float(current_position) - float(expected_position)) > tolerance
+
+    @staticmethod
+    def _timeline_shifted(last: MediaInfo, raw: RawTrack) -> bool:
+        """True when a still-playing track moved on the timeline by > 2.0s (manual seek, not linear time += 1)."""
+        if raw.status != STATUS_PLAYING or raw.start_at is None or last.start_at is None:
+            return False
+        return abs(raw.start_at - last.start_at) > SEEK_TOLERANCE_SECONDS
+
+    def _publish(self, info: MediaInfo | None, force: bool = False) -> None:
         """Emit only on a new track, or on stop after STOP_EMPTY_TICKS_THRESHOLD consecutive empty ticks."""
         if info is None:
             with self._state_lock:
@@ -218,7 +260,7 @@ class BaseMediaExtractor(QObject):
         track_hash = info.track_hash or make_track_hash(info.artist, info.title)
         with self._state_lock:
             self._empty_ticks = 0
-            if track_hash == self._last_sent_hash and self._last_info is not None:
+            if not force and track_hash == self._last_sent_hash and self._last_info is not None:
                 return
             info = replace(info, track_hash=track_hash)
             self._last_sent_hash = track_hash

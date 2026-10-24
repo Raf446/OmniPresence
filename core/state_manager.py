@@ -20,13 +20,35 @@ from core.priority_engine import (
     RuleError,
 )
 from core.privacy_shield import PRIVACY_SHIELD, PrivacyShield
-from core.settings_manager import CLIENT_ID_ENV, DEFAULT_CLIENT_ID, SETTINGS_MANAGER, Settings
+from core.settings_manager import (
+    CLIENT_ID_ENV,
+    DEFAULT_CLIENT_ID,
+    DYNAMIC_CLIENT_IDS,
+    SETTINGS_MANAGER,
+    SPOTIFY_CLIENT_ID,
+    VLC_CLIENT_ID,
+    YOUTUBE_CLIENT_ID,
+    Settings,
+    resolve_client_id,
+)
 from extractors.celestial_sync import CELESTIAL_SYNC
 from extractors.github_resolver import GITHUB_AVATAR_RESOLVER
+from extractors.media.poster_resolver import POSTER_RESOLVER
 from extractors.mood_engine import MOOD_ENGINE
 from extractors.youtube_resolver import YOUTUBE_THUMBNAIL_RESOLVER
 
-__all__ = ["CLIENT_ID_ENV", "DEFAULT_CLIENT_ID", "LogEntry", "Settings", "StateManager"]
+__all__ = [
+    "CLIENT_ID_ENV",
+    "DEFAULT_CLIENT_ID",
+    "DYNAMIC_CLIENT_IDS",
+    "LogEntry",
+    "SPOTIFY_CLIENT_ID",
+    "Settings",
+    "StateManager",
+    "VLC_CLIENT_ID",
+    "YOUTUBE_CLIENT_ID",
+    "resolve_client_id",
+]
 
 
 @dataclass(frozen=True)
@@ -99,12 +121,17 @@ class StateManager(QObject):
         self._shared: dict[str, str] = {}
         self._last_signature: tuple | None = None
         self._last_outgoing: Any = object()
+        self._last_pushed_payload: tuple | None = None
+        self._last_logged_sent_payload: tuple | None = None
+        self._last_logged_sent_presence: PresenceData | None = None
         self._last_trigger: tuple[str, str] | None = None
+        self._active_client_id: str = settings.get_active_client_id()
 
         self._sync_feature_modules()
 
         YOUTUBE_THUMBNAIL_RESOLVER.signals.resolved.connect(self.on_youtube_thumbnail)
         GITHUB_AVATAR_RESOLVER.signals.resolved.connect(self.on_github_avatar)
+        POSTER_RESOLVER.signals.resolved.connect(self.on_poster_resolved)
         MOOD_ENGINE.signals.resolved.connect(self.on_mood_resolved)
         CELESTIAL_SYNC.signals.weather_updated.connect(self.on_celestial_updated)
         self.privacy_shield.shield_engaged.connect(self.on_shield_engaged)
@@ -261,6 +288,11 @@ class StateManager(QObject):
         self.log("info", "github", f"avatar resolved: @{username}")
         self._reevaluate()
 
+    @Slot(str, str, str)
+    def on_poster_resolved(self, _norm_key: str, series_title: str, url: str) -> None:
+        self.log("info", "poster", f"poster matched: {series_title}")
+        self._reevaluate()
+
     @Slot(str, str)
     def on_ipc_message(self, level: str, text: str) -> None:
         self.log(level, "ipc", text)
@@ -289,6 +321,15 @@ class StateManager(QObject):
 
     @Slot(object)
     def on_presence_sent(self, presence: PresenceData | None) -> None:
+        sig = self._payload_signature(presence)
+        if (
+            self._last_logged_sent_payload is not None
+            and sig == self._last_logged_sent_payload
+            and not self._is_meaningful_outgoing_change(self._last_logged_sent_presence, presence)
+        ):
+            return
+        self._last_logged_sent_payload = sig
+        self._last_logged_sent_presence = presence
         if presence is None:
             self.log("info", "ipc", "presence cleared")
             return
@@ -302,15 +343,9 @@ class StateManager(QObject):
             return False
 
         custom_app_id = config.app_id.strip()
-        if enabled and custom_app_id:
-            if not custom_app_id.isdigit():
-                self.log("error", "custom-rpc", "Custom Application ID must contain digits only")
-                return False
-            self.client_id_changed.emit(custom_app_id)
-        elif not enabled and self._manual is not None and self._manual.app_id.strip():
-            active_id = self.settings.get_active_client_id()
-            if active_id:
-                self.client_id_changed.emit(active_id)
+        if enabled and custom_app_id and not custom_app_id.isdigit():
+            self.log("error", "custom-rpc", "Custom Application ID must contain digits only")
+            return False
 
         was_active = self._manual is not None
         self._manual = config if enabled else None
@@ -373,7 +408,8 @@ class StateManager(QObject):
                 client_id=cleaned,
                 discord_client_id=cleaned,
             )
-            active_id = self.settings.get_active_client_id()
+            active_id = self.resolve_active_client_id()
+            self._active_client_id = active_id
             self.log("info", "gateway", f"Switched to Custom Application ID ({active_id})")
         else:
             self.update_settings(
@@ -382,7 +418,8 @@ class StateManager(QObject):
                 client_id=DEFAULT_CLIENT_ID,
                 discord_client_id=DEFAULT_CLIENT_ID,
             )
-            active_id = self.settings.get_active_client_id()
+            active_id = self.resolve_active_client_id()
+            self._active_client_id = active_id
             self.log("info", "gateway", f"Connected via Official OmniPresence Gateway ({active_id})")
         self.client_id_changed.emit(active_id)
         return True
@@ -457,6 +494,88 @@ class StateManager(QObject):
         self.analytics_changed.emit(analytics_snap)
 
         outgoing = resolution.presence if resolution.sent else None
-        if outgoing != self._last_outgoing:
+        target_client_id = self.resolve_active_client_id(resolution)
+        if target_client_id != self._active_client_id:
+            self._active_client_id = target_client_id
+            self.log("info", "gateway", f"Dynamic Client ID switched -> {target_client_id}")
+            self.client_id_changed.emit(target_client_id)
+
+        outgoing_sig = self._payload_signature(outgoing)
+        if self._is_meaningful_outgoing_change(self._last_outgoing, outgoing):
             self._last_outgoing = outgoing
+            self._last_pushed_payload = outgoing_sig
             self.outgoing_changed.emit(outgoing)
+
+    @staticmethod
+    def _is_paused_presence(presence: PresenceData | None) -> bool:
+        if presence is None:
+            return False
+        return (
+            presence.large_image == "pause"
+            or presence.small_image == "pause"
+            or (presence.details is not None and presence.details.startswith("[Paused]"))
+            or (presence.start is None and presence.end is None and presence.tier == 5)
+        )
+
+    @classmethod
+    def _payload_signature(cls, presence: PresenceData | None) -> tuple | None:
+        if presence is None:
+            return None
+        state_flag = "paused" if cls._is_paused_presence(presence) else "playing"
+        return (
+            presence.rule_id,
+            presence.tier,
+            presence.activity_type,
+            presence.details,
+            presence.state,
+            presence.large_image,
+            presence.large_text,
+            presence.small_image,
+            presence.small_text,
+            presence.buttons,
+            state_flag,
+        )
+
+    @classmethod
+    def _is_meaningful_outgoing_change(cls, prev: Any, curr: PresenceData | None) -> bool:
+        """Emit to IPC only on valid event-driven transitions (status change, seek > 2.0s, track/poster change, or rule switch)."""
+        if not isinstance(prev, PresenceData) and prev is not None:
+            return True
+        if (prev is None) != (curr is None):
+            return True
+        if prev is None or curr is None:
+            return False
+        prev_sig = cls._payload_signature(prev)
+        curr_sig = cls._payload_signature(curr)
+        if prev_sig != curr_sig:
+            return True
+        if cls._is_paused_presence(curr):
+            # Strict deduplication: identical paused payload must NEVER re-emit
+            return False
+        start_shifted = (
+            (prev.start is None) != (curr.start is None)
+            or (prev.end is None) != (curr.end is None)
+            or (prev.start is not None and curr.start is not None and abs(curr.start - prev.start) > 2.0)
+            or (prev.end is not None and curr.end is not None and abs(curr.end - prev.end) > 2.0)
+        )
+        return start_shifted
+
+    @property
+    def active_client_id(self) -> str:
+        """Currently active Discord Application ID resolved by the dynamic Multi-Client ID switcher."""
+        return self._active_client_id
+
+    def resolve_active_client_id(self, resolution: Resolution | None = None) -> str:
+        """Return the Discord Application ID required by `resolution` (or current state)."""
+        res = resolution if resolution is not None else self.resolution
+        rule_id = res.rule.id if (res is not None and res.rule is not None) else None
+        custom_app_id = (
+            self._manual.app_id.strip()
+            if (rule_id == "manual-override" and self._manual is not None and not self.shield_active)
+            else ""
+        )
+        return resolve_client_id(
+            rule_id,
+            default_id=self.settings.get_active_client_id(),
+            custom_app_id=custom_app_id,
+        )

@@ -29,11 +29,15 @@
   "celestial_weather_enabled": true,
   "location_mode": "gps",
   "manual_location_name": "",
-  "manual_lat": -13.2088,
+  "manual_lat": -10.8984,
   "manual_lon": 106.8456,
-  "celestial_latitude": -6.8984,
+  "celestial_latitude": -10.8984,
   "celestial_longitude": 107.5199,
   "celestial_append_to_state": true,
   "privacy_show_city": false,
-  "idle_custom_image": ""
+  "idle_custom_image": "",
+  "vlc_http_enabled": true,
+  "vlc_http_host": "127.0.0.1",
+  "vlc_http_port": 8080,
+  "vlc_http_password": "omnipresence"
 }

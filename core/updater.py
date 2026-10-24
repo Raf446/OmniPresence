@@ -14,9 +14,11 @@ from pathlib import Path
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import QApplication
 
+from core.version import APP_VERSION
+
 GITHUB_REPO: str = "Raf446/OmniPresence"
 LATEST_RELEASE_API_URL: str = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-CURRENT_VERSION: str = "v2.4"
+CURRENT_VERSION: str = f"v{APP_VERSION}"
 USER_AGENT: str = f"OmniPresence-Updater/{CURRENT_VERSION.lstrip('v')} (+https://github.com/{GITHUB_REPO})"
 
 

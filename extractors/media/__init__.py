@@ -11,6 +11,7 @@ from typing import Any
 from extractors.media.base import POLL_INTERVAL_MS, STOP_EMPTY_TICKS_THRESHOLD, BaseMediaExtractor, RawTrack
 from extractors.media.common import ALBUM_ART_RESOLVER, AlbumArtResolver, MediaInfo, make_track_hash
 from extractors.media.links import build_genius_url, build_media_buttons, build_spotify_url
+from extractors.media.vlc_http import VlcHttpClient, VlcHttpConfig, config_from_settings
 
 __all__ = [
     "ALBUM_ART_RESOLVER",
@@ -21,9 +22,12 @@ __all__ = [
     "POLL_INTERVAL_MS",
     "RawTrack",
     "STOP_EMPTY_TICKS_THRESHOLD",
+    "VlcHttpClient",
+    "VlcHttpConfig",
     "build_genius_url",
     "build_media_buttons",
     "build_spotify_url",
+    "config_from_settings",
     "create_media_extractor",
     "get_extractor_class",
     "make_track_hash",

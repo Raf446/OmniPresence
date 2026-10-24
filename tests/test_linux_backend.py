@@ -12,6 +12,7 @@ from PySide6.QtCore import QCoreApplication
 
 from extractors.media.base import RawTrack
 from extractors.media.linux_mpris import MPRIS_PATH, PLAYER_IFACE, LinuxMprisExtractor
+from extractors.media.vlc_http import VlcHttpClient, VlcHttpConfig
 from extractors.telemetry.linux_telemetry import (
     LinuxTelemetry,
     parse_meminfo,
@@ -19,6 +20,7 @@ from extractors.telemetry.linux_telemetry import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+NO_VLC_HTTP = VlcHttpClient(lambda: VlcHttpConfig(enabled=False))  # hermetic: never probe localhost:8080
 
 SPOTIFY_TRACK_ID = "4uLU6hMCjMI75M1A2tKUQC"
 SPOTIFY_METADATA = {
@@ -80,7 +82,7 @@ class LinuxMprisExtractorTests(unittest.TestCase):
                 },
             }
         )
-        self.extractor = LinuxMprisExtractor(preferred_apps=["spotify"], bus_factory=lambda: self.bus)
+        self.extractor = LinuxMprisExtractor(preferred_apps=["spotify"], bus_factory=lambda: self.bus, vlc_client=NO_VLC_HTTP)
 
     def test_extracts_title_artist_album_and_cover(self) -> None:
         before = time.time()
@@ -106,7 +108,7 @@ class LinuxMprisExtractorTests(unittest.TestCase):
 
     def test_returns_none_when_nothing_is_playing(self) -> None:
         bus = make_fake_bus({"org.mpris.MediaPlayer2.spotify": spotify_player("Paused")})
-        extractor = LinuxMprisExtractor(bus_factory=lambda: bus)
+        extractor = LinuxMprisExtractor(bus_factory=lambda: bus, vlc_client=NO_VLC_HTTP)
         self.assertIsNone(extractor._read_session())
 
     def test_file_cover_art_is_ignored_for_discord(self) -> None:

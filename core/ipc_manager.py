@@ -28,6 +28,14 @@ from pypresence import (
 from pypresence.utils import get_ipc_path
 
 from core.priority_engine import PresenceData
+from core.settings_manager import (
+    DEFAULT_CLIENT_ID,
+    DYNAMIC_CLIENT_IDS,
+    SPOTIFY_CLIENT_ID,
+    VLC_CLIENT_ID,
+    YOUTUBE_CLIENT_ID,
+    resolve_client_id,
+)
 
 
 class ConnectionState(str, Enum):
@@ -227,16 +235,20 @@ class IPCManager(QThread):
     WINDOW_LIMIT = 4
     SUSTAINED_GAP_SECONDS = 5.0
     PRIORITY_SWITCH_GAP = 0.25
-    HEARTBEAT_SECONDS = 15.0
+    HEARTBEAT_INTERVAL = 40.0
+    HEARTBEAT_SECONDS = 40.0
     LIVENESS_CHECK_SECONDS = 5.0
     CONNECT_TIMEOUT = 15.0
+    REHANDSHAKE_DEBOUNCE_SECONDS = 0.35
 
-    def __init__(self, client_id: str, parent=None) -> None:
+    def __init__(self, client_id: str = DEFAULT_CLIENT_ID, parent=None) -> None:
         super().__init__(parent)
-        self._client_id = client_id.strip()
+        self._client_id = (client_id or DEFAULT_CLIENT_ID).strip()
+        self._default_client_id = self._client_id
         self._lock = threading.Lock()
         self._desired: PresenceData | None = None
         self._last_pushed: PresenceData | None = None
+        self._last_pushed_payload: tuple | None = None
         self.pending_activity: PresenceData | None = None
         self._has_pending: bool = False
         self._pending_staged_at: float = 0.0
@@ -247,24 +259,95 @@ class IPCManager(QThread):
         self._wake: asyncio.Event | None = None
         self._status = ("", "")
 
+    @property
+    def client_id(self) -> str:
+        with self._lock:
+            return self._client_id
+
+    @staticmethod
+    def resolve_client_id_for_presence(
+        presence: PresenceData | None,
+        default_id: str = DEFAULT_CLIENT_ID,
+        custom_app_id: str | None = None,
+    ) -> str:
+        """Return the target Discord Application ID for `presence` (or `default_id` when idle/None)."""
+        rule_id = presence.rule_id if presence is not None else None
+        return resolve_client_id(rule_id, default_id=default_id, custom_app_id=custom_app_id)
+
+    @staticmethod
+    def _is_paused_presence(presence: PresenceData | None) -> bool:
+        """Return True if `presence` represents a paused media state."""
+        if presence is None:
+            return False
+        return (
+            presence.large_image == "pause"
+            or presence.small_image == "pause"
+            or (presence.details is not None and presence.details.startswith("[Paused]"))
+            or (presence.start is None and presence.end is None and presence.tier == 5)
+        )
+
+    @classmethod
+    def _payload_signature(cls, presence: PresenceData | None) -> tuple | None:
+        """Canonical deduplication signature ignoring linear clock drift."""
+        if presence is None:
+            return None
+        state_flag = "paused" if cls._is_paused_presence(presence) else "playing"
+        return (
+            presence.rule_id,
+            presence.tier,
+            presence.activity_type,
+            presence.details,
+            presence.state,
+            presence.large_image,
+            presence.large_text,
+            presence.small_image,
+            presence.small_text,
+            presence.buttons,
+            state_flag,
+        )
+
+    @staticmethod
+    def _is_play_pause_transition(prev: PresenceData | None, curr: PresenceData | None) -> bool:
+        """Return True when transitioning between Playing and Paused on the same active media rule."""
+        if prev is None or curr is None:
+            return False
+        if prev.rule_id != curr.rule_id:
+            return False
+        return (
+            (prev.large_image == "pause") != (curr.large_image == "pause")
+            or (prev.small_image == "pause") != (curr.small_image == "pause")
+            or (prev.start is None) != (curr.start is None)
+        )
+
     @staticmethod
     def _is_priority_transition(prev: PresenceData | None, curr: PresenceData | None) -> bool:
-        """Return True when switching rules/tiers, changing track/details/buttons, seeking, or upgrading placeholder to artwork."""
+        """Return True only when one of the 4 valid event-driven IPC emission criteria is met:
+        (a) Playback status transition (playing <-> paused <-> stopped),
+        (b) Manual seek (abs(curr_start - prev_start) > 2.0s),
+        (c) Media / episode / poster change (details, state, large_image, large_text, small_image, buttons),
+        (d) Context / application / rule switch (rule_id, tier, activity_type).
+        """
         if (prev is None) != (curr is None):
             return True
         if prev is None or curr is None:
             return False
         start_shifted = (
             (prev.start is None) != (curr.start is None)
-            or (prev.start is not None and curr.start is not None and abs(curr.start - prev.start) > 2)
+            or (prev.end is None) != (curr.end is None)
+            or (prev.start is not None and curr.start is not None and abs(curr.start - prev.start) > 2.0)
+            or (prev.end is not None and curr.end is not None and abs(curr.end - prev.end) > 2.0)
         )
         return (
             curr.tier == 1
             or curr.tier != prev.tier
             or curr.rule_id != prev.rule_id
+            or curr.activity_type != prev.activity_type
             or curr.details != prev.details
             or curr.state != prev.state
             or curr.large_image != prev.large_image
+            or curr.large_text != prev.large_text
+            or curr.small_image != prev.small_image
+            or curr.small_text != prev.small_text
             or curr.buttons != prev.buttons
             or start_shifted
         )
@@ -280,9 +363,18 @@ class IPCManager(QThread):
         return build_user_profile(user)
 
     def submit(self, presence: PresenceData | None) -> None:
-        """Store the latest presence in pending_activity buffer and wake the IPC worker immediately."""
+        """Store the latest presence in pending_activity buffer, auto-switch Client ID if needed, and wake the IPC worker."""
         with self._lock:
             now = time.monotonic()
+            if presence is not None and presence.rule_id and presence.rule_id != "manual-override":
+                target_id = self.resolve_client_id_for_presence(presence, default_id=self._default_client_id)
+                if target_id != self._client_id:
+                    self._client_id = target_id
+                    self._last_pushed = None
+                    self._last_pushed_payload = None
+                    self._cooldown_active = False
+                    self._cooldown_until = 0.0
+
             in_cooldown = self._cooldown_active or (now < self._cooldown_until)
             if (
                 in_cooldown
@@ -293,19 +385,55 @@ class IPCManager(QThread):
                 and presence.tier >= 6
             ):
                 return
-            self._desired = presence
-            self.pending_activity = presence
-            if presence == self._last_pushed and not in_cooldown:
+
+            incoming_sig = self._payload_signature(presence)
+            if (
+                self._last_pushed_payload is not None
+                and incoming_sig == self._last_pushed_payload
+                and not self._is_priority_transition(self._last_pushed, presence)
+                and not in_cooldown
+            ):
+                # Strict deduplication: identical paused or playing payload without seek (> 2.0s) is cancelled
+                self._desired = self._last_pushed
+                self.pending_activity = self._last_pushed
                 self._has_pending = False
                 self._pending_staged_at = 0.0
                 return
+
+            self._desired = presence
+            self.pending_activity = presence
+            if presence == self._last_pushed and self._last_pushed_payload is not None and not in_cooldown:
+                self._has_pending = False
+                self._pending_staged_at = 0.0
+                return
+            if self._is_play_pause_transition(self._last_pushed, presence) or self._is_priority_transition(
+                self._last_pushed, presence
+            ):
+                self._cooldown_active = False
+                self._cooldown_until = 0.0
             self._has_pending = True
             self._pending_staged_at = now
         self._poke()
 
     def set_client_id(self, client_id: str) -> None:
+        cleaned = (client_id or "").strip()
+        if not cleaned:
+            return
         with self._lock:
-            self._client_id = client_id.strip()
+            if cleaned not in DYNAMIC_CLIENT_IDS.values():
+                self._default_client_id = cleaned
+            if cleaned == self._client_id:
+                return
+            self._client_id = cleaned
+            # Force re-dispatch of the active presence once the new Client ID socket handshakes
+            self._last_pushed = None
+            self._last_pushed_payload = None
+            if self._desired is not None:
+                self.pending_activity = self._desired
+                self._has_pending = True
+                self._pending_staged_at = time.monotonic()
+            self._cooldown_active = False
+            self._cooldown_until = 0.0
         self._poke()
 
     def stop(self) -> None:
@@ -350,6 +478,7 @@ class IPCManager(QThread):
             payload = self.pending_activity if self._has_pending else self._desired
             self._desired = payload
             self._last_pushed = payload
+            self._last_pushed_payload = self._payload_signature(payload)
             self._has_pending = False
             self._pending_staged_at = 0.0
             self._cooldown_active = False
@@ -433,6 +562,9 @@ class IPCManager(QThread):
                 await self._sleep(delay)
                 continue
             await self._farewell(rpc)
+            if not self._halt.is_set():
+                # Brief debounce before re-handshaking with the newly selected Client ID
+                await asyncio.sleep(self.REHANDSHAKE_DEBOUNCE_SECONDS)
 
     async def _serve(self, rpc: AioPresence, client_id: str) -> None:
         sent_at: deque[float] = deque()
@@ -454,32 +586,37 @@ class IPCManager(QThread):
             while sent_at and now - sent_at[0] >= (self.WINDOW_SECONDS - 0.20):
                 sent_at.popleft()
 
-            due = (
-                (not pushed_once)
-                or has_pending
-                or desired != last_pushed
-                or now - last_io >= self.HEARTBEAT_SECONDS
+            is_playing_active = (
+                pushed_once
+                and last_pushed is not None
+                and not self._is_paused_presence(last_pushed)
+                and last_pushed.start is not None
             )
+            heartbeat_due = is_playing_active and (now - last_io >= self.HEARTBEAT_INTERVAL)
+            transition_due = (not pushed_once) or self._is_priority_transition(last_pushed, desired)
+
+            due = transition_due or has_pending or heartbeat_due
             if due:
-                # If pending_activity equals what is already displayed and heartbeat isn't due, skip redundant send
-                if pushed_once and desired == last_pushed and now - last_io < self.HEARTBEAT_SECONDS:
+                # Strict deduplication: if already pushed, no transition occurred, and 40s playing heartbeat is not due, cancel send
+                if pushed_once and not transition_due and not heartbeat_due:
                     self._consume_pending()
-                    timeout = self.HEARTBEAT_SECONDS - (now - last_io)
-                    await self._sleep(min(timeout, self.LIVENESS_CHECK_SECONDS))
+                    if is_playing_active:
+                        rem = max(self.HEARTBEAT_INTERVAL - (now - last_io), 0.05)
+                        await self._sleep(min(rem, self.LIVENESS_CHECK_SECONDS))
+                    else:
+                        await self._sleep(self.LIVENESS_CHECK_SECONDS)
                     continue
 
+                is_immediate = (
+                    (not pushed_once)
+                    or self._is_play_pause_transition(last_pushed, desired)
+                    or transition_due
+                )
                 wait = 0.0
-                if sent_at:
-                    is_switch = (not pushed_once) or self._is_priority_transition(last_pushed, desired)
-                    min_gap = (
-                        self.PRIORITY_SWITCH_GAP
-                        if (is_switch and len(sent_at) < self.WINDOW_LIMIT)
-                        else self.SUSTAINED_GAP_SECONDS
-                    )
-                    wait = max(wait, min_gap - (now - sent_at[-1]))
-
-                if len(sent_at) >= self.WINDOW_LIMIT:
-                    wait = max(wait, (self.WINDOW_SECONDS - 0.15) - (now - sent_at[0]))
+                if sent_at and not is_immediate and not heartbeat_due:
+                    wait = max(wait, self.SUSTAINED_GAP_SECONDS - (now - sent_at[-1]))
+                    if len(sent_at) >= self.WINDOW_LIMIT:
+                        wait = max(wait, (self.WINDOW_SECONDS - 0.15) - (now - sent_at[0]))
 
                 if wait <= 0:
                     payload_to_send = self._consume_pending()
@@ -487,7 +624,8 @@ class IPCManager(QThread):
                     last_pushed, pushed_once = payload_to_send, True
                     last_io = time.monotonic()
                     sent_at.append(last_io)
-                    self.presence_sent.emit(payload_to_send)
+                    if transition_due:
+                        self.presence_sent.emit(payload_to_send)
                     continue
 
                 # Rate-limit cooldown active: keep latest payload in pending_activity buffer and wake as soon as cooldown expires
@@ -497,7 +635,10 @@ class IPCManager(QThread):
                 self._stage_pending(desired)
                 timeout = wait
             else:
-                timeout = self.HEARTBEAT_SECONDS - (now - last_io)
+                if is_playing_active:
+                    timeout = max(self.HEARTBEAT_INTERVAL - (now - last_io), 0.05)
+                else:
+                    timeout = self.LIVENESS_CHECK_SECONDS
             await self._sleep(min(max(timeout, 0.05), self.LIVENESS_CHECK_SECONDS))
 
     @staticmethod
@@ -515,6 +656,8 @@ class IPCManager(QThread):
                 icon = "github"
             elif "spotify" in current.rule_id:
                 icon = "spotify"
+            elif "vlc" in current.rule_id:
+                icon = "vlc"
             else:
                 icon = "music_placeholder"
             current = replace(current, large_image=icon)

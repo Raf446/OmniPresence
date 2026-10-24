@@ -1,180 +1,235 @@
 <div align="center">
 
-# OmniPresence
+# OmniPresence `v2.4.1`
 
-**Autonomous, multi-context Discord Rich Presence engine for Windows and Linux.**
+**Aplikasi Discord Rich Presence Cerdas, Ringan, dan Reaktif untuk Windows.**
 
-[![Version](https://img.shields.io/badge/version-v2.4-5865F2.svg?style=flat-square)](https://github.com/Raf446/OmniPresence/releases)
-[![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](mit_license.md)
-[![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20%7C%20Linux-0078D6.svg?style=flat-square)](#cross-platform-native-subsystems)
-[![Python](https://img.shields.io/badge/python-3.11%2B-3776AB.svg?style=flat-square)](#build-from-source)
-[![Framework](https://img.shields.io/badge/gui-PySide6%20(Qt6)-41CD52.svg?style=flat-square)](#rich-obsidian-glass-ui--discord-live-mirror)
+[![Version](https://img.shields.io/badge/Version-v2.4.1-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://github.com/Raf446/OmniPresence/releases)
+[![License](https://img.shields.io/badge/License-MIT-22C55E?style=for-the-badge)](mit_license.md)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](#panduan-instalasi--penggunaan-development)
+[![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D6?style=for-the-badge&logo=windows&logoColor=white)](#prasyarat--konfigurasi-eksternal)
+[![Unit Tests](https://img.shields.io/badge/Unit%20Tests-88%20Passed-10B981?style=for-the-badge&logo=checkmarx&logoColor=white)](#pengujian-otomatis-testing)
+[![Discord RPC](https://img.shields.io/badge/Discord%20RPC-IPC%20Event--Driven-7289DA?style=for-the-badge&logo=discord&logoColor=white)](#zero-delay--rate-limit-immune-architecture)
 
 </div>
 
 ---
 
-## Overview
+## Ringkasan Proyek
 
-OmniPresence watches everything you do on your machine (compilers, games, editors, music, browser tabs, idle time) and decides, in real time, **which single context deserves your Discord profile**. A deterministic six-tier arbitration engine replaces the usual "last writer wins" behavior of single-purpose presence tools, and a rate-limit-aware IPC layer keeps the card stable without ever tripping Discord's 5-updates-per-20-seconds budget.
+**OmniPresence v2.4.1** adalah mesin otomasi **Discord Rich Presence** generasi terbaru untuk Windows yang mendeteksi aktivitas sistem secara *real-time*—mulai dari pemutaran anime/film di **VLC Media Player**, musik di **Spotify**, tontonan **YouTube**, sesi pemrograman di **VS Code**, hingga aktivitas **Gaming**—dan menampilkannya ke profil Discord Anda dengan akurasi tinggi.
 
-> **Ringkasan (ID):** OmniPresence adalah engine Discord Rich Presence otomatis untuk Windows dan Linux. Satu codebase, dua backend native (Windows SMTC dan Linux MPRIS2/D-Bus + `/proc`), arbitrasi prioritas P1-P6, polling media 5 detik anti-flapping, tombol interaktif Spotify/Genius, serta preview kartu Discord live lengkap dengan avatar dan banner asli akun kamu.
+Dirancang dengan arsitektur **Event-Driven IPC** dan **Dynamic Multi-Client ID Switching**, OmniPresence merespons transisi *Play/Pause* atau *Seek* secara instan (`250ms` polling) tanpa memicu *rate-limit throttling* dari Discord Client.
 
 ---
 
-## Key Highlights & Features
+## Fitur Utama (*Key Features*)
 
-### Tiered Priority Arbitration Engine (P1-P6)
+### 1. Dynamic Priority Tier Engine (P1–P5)
+OmniPresence menggunakan mesin arbitrasi berjenjang deterministik untuk memastikan hanya satu konteks aktivitas terpenting yang tampil di profil Discord Anda setiap saat:
 
-Every scan produces a set of live candidates. The engine ranks them by tier, then by foreground state, then by rule order, and renders exactly one winner.
-
-| Tier | Context | Typical trigger | Behavior |
+| Tier | Kategori Aktivitas | Contoh Aplikasi / Pemicu | Perilaku Prioritas |
 | :--- | :--- | :--- | :--- |
-| **P1** | Manual / Privacy Shield | Custom RPC toggle, `Win+L`, inactivity timeout | Locks your chosen (or stealth) status and outranks everything below. |
-| **P2** | Build | `gcc`, `cl`, `cargo`, `ninja` | Active while the toolchain runs, released the moment it exits. |
-| **P3** | Game | Full-screen DirectX/Vulkan windows | Prevents media or IDE status from overwriting a game. |
-| **P4** | Editor | VS Code, Visual Studio, Code::Blocks | Shows workspace and language while the editor is foreground. |
-| **P5** | Media | Spotify, Apple Music, YouTube in a browser | Track, artist, cover art, mood badge and interactive buttons. |
-| **P6** | Idle / Standby | No input past the threshold | Live CPU/RAM telemetry with celestial and weather context. |
+| **P1** | **Manual Override & Privacy Shield** | Custom Status Toggle, `Win+L`, Stealth Mode | Mengunci status kustom atau menyembunyikan aktivitas; mengesampingkan seluruh tier di bawahnya. |
+| **P2** | **Build & Compiler Toolchain** | `gcc`, `clang`, `cargo`, `ninja`, `msbuild` | Aktif otomatis saat kompilasi berlangsung dan langsung dilepas ketika proses selesai. |
+| **P3** | **Gaming & Launchers** | Game DirectX/Vulkan Fullscreen, Steam, Epic | Mencegah pemutar musik atau IDE menimpa status game yang sedang dimainkan. |
+| **P4** | **Developer Tools & IDE** | Visual Studio Code, Visual Studio, Code::Blocks | Menampilkan nama *workspace*, file aktif, dan bahasa pemrograman saat sedang *coding*. |
+| **P5** | **Media Players (Hierarki Ketat)** | **VLC Media Player** $\rightarrow$ **YouTube** $\rightarrow$ **Spotify** $\rightarrow$ *Media Lain* | Menampilkan judul media, poster/artwork dinamis, progress bar waktu nyata, dan tombol interaktif. |
+| **P6** | **Idle / Standby Telemetry** | Sistem tanpa aktivitas di atas ambang batas | Menampilkan telemetri CPU/RAM ringan beserta fase waktu/cuaca (*Celestial Sync*). |
 
-Stability guarantees built into the pipeline:
-
-- **Media transition smoothing:** the engine holds the last P5 candidate through a short transition window, so a skipped track can never flash P6.
-- **IPC Priority Guard:** while Discord's rate-limit cooldown is active, a P6 payload is never allowed to overwrite a pending P5 payload; the newest track is always the one delivered when the window opens.
-- **Foreground preemption:** context switches use a burst lane (0.25 s) while sustained updates stay spaced at 5 s.
-
-### Cross-Platform Native Subsystems
-
-One repository, one codebase, platform adapters selected lazily from `sys.platform`. Only the backend for the running OS is ever imported, so `dbus` is never loaded on Windows and `winsdk` is never loaded on Linux.
-
-| Concern | Windows 10/11 | Linux |
-| :--- | :--- | :--- |
-| Media detection | **SMTC** via `winsdk` (`GlobalSystemMediaTransportControlsSessionManager`) | **MPRIS2** over the D-Bus session bus (`org.mpris.MediaPlayer2.*`: `xesam:title`, `xesam:artist`, `xesam:album`, `mpris:artUrl`) |
-| CPU / RAM telemetry | `psutil` | Zero-overhead parsing of `/proc/stat` (CPU delta) and `/proc/meminfo` (`MemTotal - MemAvailable`) |
-| Discord IPC | Named pipe `\\.\pipe\discord-ipc-N` | Unix domain socket `$XDG_RUNTIME_DIR/discord-ipc-N` (also Flatpak and Snap sub-paths) |
-
-The Linux backend is covered by a hermetic mock suite (`tests/test_linux_backend.py`) that fakes the D-Bus interface and the `/proc` virtual files, so it runs on any OS, including Windows CI.
-
-### Smart Media Scrobbler & Interactive RPC
-
-- **5-second periodic polling, anti-flapping by design:** no per-event SMTC listeners. Each tick reads the active session, hashes `artist + title`, and stays completely silent when the hash is unchanged, which saves Discord IPC quota.
-- **Smart hash delta:** a changed hash triggers metadata extraction, artwork resolution and a single `media_changed` emission. Rapid multi-skips collapse into whichever track is playing at the next tick.
-- **Graceful stop:** playback is declared stopped only after **two consecutive empty ticks (10 s)**, so the engine falls back to Standby smoothly instead of flickering.
-- **Interactive buttons:** *Listen on Spotify* deep-links to the exact track when its ID is known (Linux MPRIS exposes it), otherwise to a Spotify search; *Lyrics on Genius* opens a Genius search. Labels are capped at 32 characters, URLs at 512, and queries are shrunk to fit.
-- **Graceful degradation:** if Discord rejects a payload, the IPC layer retries without buttons, then with a bundled icon instead of external artwork, so presence delivery never fails outright.
-- **Zero-key artwork:** iTunes and Deezer lookups with fuzzy scoring and tribute/karaoke rejection; no API key or developer account needed.
-
-### Rich Obsidian Glass UI & Discord Live Mirror
-
-- **Live Discord card preview** that mirrors exactly what friends will see, including your **real avatar** (circular mask, animated avatars supported) and **banner** fetched from the Discord CDN straight from the IPC `READY` payload. Users without a custom banner get their accent color as an elegant gradient.
-- Asynchronous image loading through `QNetworkAccessManager`, so the UI never blocks.
-- Adaptive Mood Engine (HSL palette classification of cover art), Celestial Sync (solar/lunar phase and weather), Privacy Shield, daily analytics, and a frameless collapsible-sidebar window built on PySide6.
-- Official gateway Application ID out of the box, with a custom ID option, plus an in-app auto-updater driven by GitHub Releases.
+> **Hierarki Internal P5 (Media):**
+> Di dalam grup **P5**, OmniPresence menerapkan urutan prioritas tegas:
+> 1. **VLC Media Player** (`vlc-video` / `vlc-audio`) — *Prioritas tertinggi di P5*
+> 2. **YouTube (Browser)** (`youtube-browser`)
+> 3. **Spotify** (`spotify`)
+> 4. **Media Session Lainnya** (Apple Music, SMTC/MPRIS umum)
 
 ---
 
-## Architecture
+### 2. Full Media Integration (VLC, Spotify, YouTube)
+
+- **VLC Media Player (Direct HTTP Web Interface — 250ms Polling)**
+  - Membaca status pemutaran langsung dari endpoint bawaan VLC (`http://127.0.0.1:8080/requests/status.json`) setiap **250ms** di *background thread* dengan *overhead* CPU mendekati `0%`.
+  - Mendeteksi penekanan tombol `Space` (*Play/Pause*), pergantian episode/file, dan *manual seek* secara instan tanpa bergantung pada judul jendela Windows yang tidak stabil.
+- **Dynamic Online Poster Fetcher (AniList & TVMaze)**
+  - Membersihkan judul file secara otomatis dari tag grup rilis, nomor episode, dan resolusi (contoh: `"[SubGroup] Clannad BD - 01 [1080p].mkv"` $\rightarrow$ `"Clannad"`).
+  - Mencari poster resmi beresolusi tinggi secara non-blocking melalui **AniList GraphQL API** (untuk anime) dengan *fallback* otomatis ke **TVMaze API** (untuk serial TV/film barat) serta dukungan *in-memory TTL cache*.
+  - Jika koneksi offline atau poster tidak ditemukan, aset otomatis kembali (*graceful fallback*) ke ikon bawaan **`vlc`**.
+- **Custom Paused State (`large_image: "pause"`)**
+  - Saat pemutaran VLC dijeda (*Paused*), OmniPresence mempertahankan koneksi RPC tetap hidup, menghapus kalkulasi waktu berjalan agar bar durasi berhenti, menampilkan gambar utama **`pause`**, dan memperbarui status menjadi `"Paused"`.
+- **Spotify & Browser (YouTube)**
+  - Sinkronisasi otomatis melalui **Windows SMTC** (*System Media Transport Controls*) dan ekstraktor konteks browser.
+  - Dilengkapi pencarian sampul album otomatis (iTunes & Deezer API tanpa kunci API) serta tombol interaktif (*Listen on Spotify*, *Lyrics on Genius*, *Watch on YouTube*).
+
+---
+
+### 3. Dynamic Multi-Client ID Switching
+OmniPresence secara otomatis mengganti **Discord Application ID** di balik layar (*seamless IPC re-handshake*) sesuai jenis media atau aktivitas yang sedang menang di Priority Engine—tanpa perlu memasukkan Client ID secara manual di menu pengaturan:
+
+| Konteks Aktivitas | Tampilan Header Discord | Application ID Bawaan |
+| :--- | :--- | :--- |
+| **VLC Media Player** | *Watching **VLC Media Player*** | `1563538304593436712` |
+| **YouTube** | *Watching **YouTube*** | `1562111104556204112` |
+| **Spotify** | *Listening to **Spotify*** | `1562111027104063568` |
+| **Default (Coding / Gaming / Idle)** | *Playing / Using **OmniPresence*** | `1560465175188996176` |
+
+---
+
+### 4. Zero-Delay & Rate-Limit Immune Architecture
+Dirancang khusus untuk menghindari pembatasan kuota Discord IPC (*5 updates per 20 seconds*):
+
+- **Murni Event-Driven & Strict Deduplication (`_last_pushed_payload`)**:
+  - Paket IPC **hanya** dikirim saat terjadi perubahan nyata: transisi **Play $\leftrightarrow$ Pause**, lompatan waktu manual (**Seek > 2.0 detik**), atau pergantian lagu/video/aplikasi.
+  - Jika payload detik ini identik dengan payload sebelumnya (baik saat `playing` linear maupun saat `paused`), pengiriman dibatalkan sepenuhnya sehingga tidak ada *spam* log `[OK] presence sent` setiap detik.
+- **Native Discord Timestamp Animation**:
+  - Memanfaatkan pasangan epoch `start` dan `end` bawaan Discord Client sehingga bar durasi bergerak mulus secara lokal di sisi Discord tanpa perlu mengirim paket pembaruan setiap detik.
+- **Safe 40-Second Heartbeat (`HEARTBEAT_INTERVAL = 40.0s`)**:
+  - Sinkronisasi berkala setiap **40 detik** hanya dijalankan ketika media sedang berstatus **`playing`** untuk menjaga presisi waktu jangka panjang.
+  - Saat media berstatus **`paused`**, tidak ada pengiriman periodik sama sekali hingga pengguna menekan tombol *Play* kembali.
+
+---
+
+### 5. Desktop UI & Controls (*Obsidian Glass UI*)
+- **Live Discord Profile & Card Preview**: Menampilkan pratinjau kartu Rich Presence secara *real-time* lengkap dengan avatar dan banner asli akun Discord Anda (diambil langsung dari payload `READY` Discord IPC).
+- **Quick Controls & Privacy Shield**: Sakelar cepat untuk mengaktifkan/menonaktifkan modul (Media, IDE, Game, Celestial Sync, atau *Stealth Mode*).
+- **Status Visualizer & Activity Console**: Indikator koneksi IPC langsung dan konsol log aktivitas bebas duplikasi untuk memantau transisi state dengan mudah.
+- **Daily Analytics Tab**: Ringkasan statistik durasi aktivitas harian berdasarkan kategori aplikasi.
+
+---
+
+## Arsitektur Sistem
 
 ```mermaid
 flowchart LR
-    subgraph EX["Extractors (platform adapters)"]
+    subgraph EX["Extractors Layer"]
         direction TB
-        M["media: WindowsSmtcExtractor | LinuxMprisExtractor<br/>5s poll, hash delta"]
-        T["telemetry: WindowsTelemetry | LinuxTelemetry"]
-        W["process_watcher: windows, builds, idle"]
-        R["resolvers: artwork, YouTube, GitHub, mood, celestial"]
+        VLC["VLC HTTP Poller<br/>(127.0.0.1:8080 • 250ms)"]
+        SMTC["Windows SMTC & Browser<br/>(Spotify / YouTube)"]
+        POSTER["Poster Resolver<br/>(AniList GraphQL & TVMaze)"]
+        PROC["Process & IDE Watcher<br/>(Games / VS Code / Telemetry)"]
     end
 
-    subgraph CORE["Core"]
+    subgraph CORE["Core Engine"]
         direction TB
-        S["StateManager<br/>reactive hub"]
-        P["PriorityEngine<br/>P1-P6 arbitration<br/>transition smoothing"]
+        SM["StateManager<br/>(Smart Delta & Strict Dedupe)"]
+        PE["PriorityEngine<br/>(P1–P5 Arbitration)"]
+        IPC["IPCManager<br/>(Multi-Client ID & 40s Heartbeat)"]
     end
 
-    IPC["IPCManager<br/>rate-limit guard, pending buffer<br/>Priority Guard, fallback chain"]
-    UI["Obsidian Glass UI<br/>Discord live preview<br/>avatar + banner"]
-    D[("Discord client<br/>named pipe / unix socket")]
+    UI["Obsidian Glass UI<br/>(Live Preview & Analytics)"]
+    DISC[("Discord Desktop<br/>Named Pipe IPC")]
 
-    M --> S
-    T --> S
-    W --> S
-    R --> S
-    S --> P
-    P -->|Resolution| S
-    S -->|outgoing presence| IPC
-    S -->|presence_changed| UI
-    IPC <-->|READY: user profile| D
-    IPC -->|user_profile_updated| UI
-```
-
-```text
-Extractors ──> StateManager ──> PriorityEngine ──> StateManager ──┬──> IPCManager ──> Discord
- (SMTC/MPRIS,   (reactive hub)   (P1-P6 winner)    (dedupe)       │      ^   (named pipe / unix socket)
-  /proc, WinAPI)                                                  └──> UI  └── READY user, avatar, banner
-```
-
-### Repository layout
-
-```text
-OmniPresence/
-├── core/
-│   ├── ipc_manager.py        # Discord IPC, rate limiting, profile extraction, fallback chain
-│   ├── priority_engine.py    # P1-P6 arbitration, templates, smart buttons
-│   ├── state_manager.py      # Reactive state hub
-│   └── updater.py            # GitHub Releases auto-updater
-├── extractors/
-│   ├── media/                # base.py, windows_smtc.py, linux_mpris.py, links.py, common.py
-│   ├── telemetry/            # base.py, windows_telemetry.py, linux_telemetry.py
-│   └── ...                   # artwork, mood, celestial, YouTube/GitHub resolvers
-├── ui/                       # PySide6 window and live Discord preview
-├── tests/                    # Hermetic suites (Linux backend runs on Windows via mocks)
-├── installer/installer.iss   # Inno Setup script
-└── main.py                   # Entrypoint
+    VLC --> POSTER
+    VLC --> SM
+    SMTC --> SM
+    POSTER --> SM
+    PROC --> SM
+    SM <--> PE
+    SM -->|Event-Driven Flush| IPC
+    SM --> UI
+    IPC <-->|Zero-Delay Socket| DISC
 ```
 
 ---
 
-## Installation
+## Prasyarat & Konfigurasi Eksternal
 
-### Binary installer (Windows)
+### 1. Persyaratan Sistem
+- **Sistem Operasi**: Windows 10 atau Windows 11 (64-bit).
+- **Python**: Versi **3.10+** (direkomendasikan Python 3.11+).
+- **Klien Discord**: Aplikasi **Discord Desktop** (Stable / PTB / Canary) harus sedang berjalan dan login.
 
-1. Download **`OmniPresence-Setup-v2.4.exe`** from [Releases](https://github.com/Raf446/OmniPresence/releases).
-2. Run it. It is a per-user install and needs no administrator rights.
-3. Launch OmniPresence from the Desktop or Start Menu. It connects to Discord automatically and checks for updates in the background.
+### 2. Panduan Setup VLC Media Player (Wajib untuk Deteksi VLC)
+Agar OmniPresence dapat membaca durasi, status *Play/Pause*, dan judul video VLC dengan akurasi `250ms`, aktifkan modul **Lua HTTP Web Interface** bawaan VLC:
 
-### Build from source
+1. Buka **VLC Media Player**.
+2. Pilih menu **Tools** $\rightarrow$ **Preferences** (atau tekan `Ctrl + P`).
+3. Pada bagian kiri bawah jendela Preferences, ubah opsi **Show settings** dari *Simple* menjadi **All**.
+4. Navigasikan ke **Interface** $\rightarrow$ **Main interfaces**, lalu **centang kotak `Web`** (sehingga field teks menampilkan `http`).
+5. Di panel kiri, perluas menu **Interface** $\rightarrow$ **Main interfaces** $\rightarrow$ **Lua**.
+6. Pada bagian **Lua HTTP**:
+   - Isi kolom **Password** dengan: `omnipresence`
+   - Pastikan **Port** berada di `8080` (default: `127.0.0.1:8080`).
+7. Klik **Save**, lalu **tutup dan buka kembali (restart) VLC Media Player**.
 
-Requires **Python 3.11+**.
+> **Catatan Konfigurasi:** Password dan port HTTP VLC dapat disesuaikan kapan saja melalui file `config/settings.json` pada properti `"vlc_http_password": "omnipresence"` dan `"vlc_http_port": 8080`.
+
+### 3. Discord Developer Portal Asset Reference
+Jika Anda menggunakan Application ID kustom di [Discord Developer Portal](https://discord.com/developers/applications) (menu **Rich Presence** $\rightarrow$ **Art Assets**), pastikan Anda mengunggah aset dengan nama *key* berikut:
+
+| Asset Key | Penggunaan pada OmniPresence |
+| :--- | :--- |
+| **`vlc`** | Ikon utama (*large image*) default untuk VLC Media Player atau *fallback* ketika poster online tidak ditemukan, serta *small badge* saat poster anime/film aktif. |
+| **`pause`** | Gambar visual khusus (*large image*) yang ditampilkan secara otomatis ketika pemutaran VLC sedang dijeda (**Paused**). |
+
+---
+
+## Panduan Instalasi & Penggunaan (Development)
+
+Ikuti langkah-langkah berikut untuk menjalankan **OmniPresence** langsung dari kode sumber (*source code*):
 
 ```powershell
+# 1. Clone repository dan masuk ke direktori proyek
 git clone https://github.com/Raf446/OmniPresence.git
 cd OmniPresence
 
+# 2. Buat dan aktifkan Virtual Environment
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
+
+# 3. Instal seluruh dependensi yang dibutuhkan
 pip install -r requirements.txt
 
-python -m unittest tests/test_linux_backend.py   # hermetic test suite
-python main.py --smoke-test 2.0                  # headless startup check
-python main.py                                   # run the app
-```
-
-Linux media detection additionally needs `dbus-python` (`pip install dbus-python`, or your distro's `python3-dbus`) and a session bus.
-
-### Build the standalone executable and installer (Windows)
-
-```powershell
-.\build.bat                                      # PyInstaller -> dist\OmniPresence.exe
-# Then open installer\installer.iss in Inno Setup 6 and press Ctrl+F9
-# -> dist_installer\OmniPresence-Setup-v2.4.exe
+# 4. Jalankan aplikasi OmniPresence
+python main.py
 ```
 
 ---
 
-## Credits & Author
+## Pengujian Otomatis (*Testing*)
 
-Designed and built by **[Raf446](https://github.com/Raf446)**.
+OmniPresence dilengkapi dengan **88 unit test otomatis** yang menguji Priority Engine (P1–P5), VLC HTTP Web Interface Poller (`250ms`), Dynamic Online Poster Resolver (AniList & TVMaze), Dynamic Multi-Client ID Switching, hingga Event-Driven IPC & Strict Deduplication.
 
-Built with [PySide6](https://doc.qt.io/qtforpython/), [pypresence](https://github.com/qwertyquerty/pypresence), [psutil](https://github.com/giampaolo/psutil) and [winsdk](https://github.com/pywinrt/python-winsdk). Cover art is resolved through the public iTunes and Deezer search APIs; Discord, Spotify, Genius and Apple Music are trademarks of their respective owners and are not affiliated with this project.
+Jalankan seluruh *test suite* melalui terminal:
 
-Released under the [MIT License](mit_license.md).
+```powershell
+python -m unittest discover -s tests -t . -v
+```
+
+Output yang diharapkan:
+
+```text
+----------------------------------------------------------------------
+Ran 88 tests in 4.407s
+
+OK
+```
+
+---
+
+## Panduan Build Executable & Installer
+
+Anda dapat mengompilasi OmniPresence menjadi aplikasi mandiri (`.exe`) dan membungkusnya ke dalam wizard installer Windows:
+
+### 1. Kompilasi Binary Executable (`.exe`)
+Menggunakan skrip build berbasis PyInstaller:
+
+```powershell
+python build_exe.py
+```
+*(Atau jalankan skrip batch `.\build.bat` untuk membangun `dist\OmniPresence.exe`).*
+
+### 2. Pembuatan Installer Wizard (`.exe` Setup)
+Pastikan [Inno Setup Compiler (ISCC)](https://jrsoftware.org/isinfo.php) telah terinstal di sistem Anda, lalu jalankan perintah berikut:
+
+```powershell
+iscc installer.iss
+```
+*(Jika file skrip berada di subfolder `installer\`, jalankan `iscc installer\installer.iss` untuk menghasilkan paket installer `OmniPresence-Setup-v2.4.1.exe`).*
+
+---
+
+## Lisensi & Kredit
+
+Dikembangkan dan dikelola oleh **[Raf446](https://github.com/Raf446)**.  
+Dirilis di bawah lisensi **[MIT License](mit_license.md)**.

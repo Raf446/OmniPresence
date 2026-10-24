@@ -16,7 +16,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Callable
 
-SEEK_TOLERANCE_SECONDS = 3.0
+SEEK_TOLERANCE_SECONDS = 2.0
 
 ITUNES_SEARCH_URL = "https://itunes.apple.com/search"
 DEEZER_SEARCH_URL = "https://api.deezer.com/search"
@@ -723,6 +723,95 @@ class AlbumArtResolver:
 
 ALBUM_ART_RESOLVER = AlbumArtResolver()
 
+AUDIO_EXTENSIONS = frozenset(
+    {"mp3", "flac", "wav", "m4a", "aac", "ogg", "oga", "opus", "wma", "aiff", "aif", "alac", "ape", "mka"}
+)
+VIDEO_EXTENSIONS = frozenset(
+    {"mp4", "mkv", "avi", "webm", "mov", "wmv", "flv", "m4v", "mpg", "mpeg", "ts", "m2ts", "ogv", "3gp"}
+)
+MEDIA_KIND_AUDIO = "audio"
+MEDIA_KIND_VIDEO = "video"
+STATUS_PLAYING = "Playing"
+STATUS_PAUSED = "Paused"
+
+_FILE_EXT_RE = re.compile(r"\.([A-Za-z0-9]{2,5})$")
+# Release-tag content inside [...] / (...) groups: resolution, codec, source, audio, subs, bit depth.
+_RELEASE_TAG_WORDS = (
+    r"(?:2160p|1440p|1080[pi]|720p|576p|480p|360p|4k|8k|uhd|hdr10?\+?|hdr|dv|sdr|"
+    r"x26[45]|h\.?26[45]|hevc|avc|av1|xvid|divx|vp9|10[\s-]?bits?|8[\s-]?bits?|"
+    r"blu-?ray|bdrip|brrip|bd|web-?dl|web-?rip|web|hdtv|dvdrip|dvd|remux|amzn|nf|"
+    r"aac|ac3|eac3|dts(?:-hd)?|flac|truehd|atmos|ddp?5\.1|5\.1|7\.1|opus|"
+    r"subs?|subbed|dubbed|dual[\s-]?audio|multi[\s-]?subs?|eng(?:lish)?|indo(?:nesia)?|esub|hardsub|softsub|"
+    r"batch|v\d|repack|proper|extended|uncut|unrated|complete|"
+    r"[0-9A-Fa-f]{8})"
+)
+_RELEASE_GROUP_RE = re.compile(
+    r"\s*[\[\(\{]\s*(?:[^\]\)\}]*?[\s,._-])?" + _RELEASE_TAG_WORDS + r"(?:[\s,._-][^\]\)\}]*)?\s*[\]\)\}]",
+    re.IGNORECASE,
+)
+_LEADING_GROUP_RE = re.compile(r"^\s*\[[^\]]{1,40}\]\s*")
+_SCENE_CUT_RE = re.compile(
+    r"[\s._-]+(?:2160p|1440p|1080[pi]|720p|576p|480p|4k|uhd|blu-?ray|bdrip|brrip|web-?dl|web-?rip|hdtv|dvdrip|"
+    r"x26[45]|h\.?26[45]|hevc|xvid|remux|10bit)\b.*$",
+    re.IGNORECASE,
+)
+_UNDERSCORE_DOT_RE = re.compile(r"[._]+")
+
+
+def split_media_extension(name: str) -> tuple[str, str]:
+    """Split a trailing known audio/video extension off a file name or title: ('Movie', 'mkv')."""
+    cleaned = (name or "").strip()
+    found = _FILE_EXT_RE.search(cleaned)
+    if found and found.group(1).lower() in (AUDIO_EXTENSIONS | VIDEO_EXTENSIONS):
+        return cleaned[: found.start()], found.group(1).lower()
+    return cleaned, ""
+
+
+def extension_from_url(url: str) -> str:
+    """Return the lowercase media extension of a file:// or http(s):// URL, or '' when unknown."""
+    if not url:
+        return ""
+    path = urllib.parse.unquote(urllib.parse.urlsplit(url).path)
+    _, ext = split_media_extension(path.rsplit("/", 1)[-1])
+    return ext
+
+
+def sanitize_media_title(title: str) -> str:
+    """Clean a media-player file name for Discord: drop the extension and release tags.
+
+    'Movie.2020.1080p.BluRay.x265-GRP.mkv'      -> 'Movie 2020'
+    '[SubsPlease] Show - 05 (1080p) [ABCD1234].mkv' -> 'Show - 05'
+    """
+    cleaned = unicodedata.normalize("NFKC", (title or "")).strip()
+    if not cleaned:
+        return ""
+    cleaned, _ = split_media_extension(cleaned)
+    previous = None
+    while previous != cleaned:  # extensions can be doubled by some players ('x.mkv.mkv')
+        previous = cleaned
+        cleaned, _ = split_media_extension(cleaned)
+    cleaned = _RELEASE_GROUP_RE.sub(" ", cleaned)
+    stripped_lead = _LEADING_GROUP_RE.sub("", cleaned, count=1)
+    if len(stripped_lead.strip()) >= 2:
+        cleaned = stripped_lead
+    if " " not in cleaned.strip():
+        cleaned = _UNDERSCORE_DOT_RE.sub(" ", cleaned)
+    cleaned = _SCENE_CUT_RE.sub("", cleaned)
+    cleaned = _MULTI_SPACE_RE.sub(" ", cleaned).strip(" -–—|•/·._")
+    return cleaned or split_media_extension(unicodedata.normalize("NFKC", title.strip()))[0]
+
+
+def classify_media_kind(title: str = "", url: str = "", artist: str = "", album: str = "") -> str:
+    """Return 'audio' or 'video' using the file extension first, then tag metadata as a hint."""
+    for candidate in (extension_from_url(url), split_media_extension(title)[1]):
+        if candidate in AUDIO_EXTENSIONS:
+            return MEDIA_KIND_AUDIO
+        if candidate in VIDEO_EXTENSIONS:
+            return MEDIA_KIND_VIDEO
+    if (artist or "").strip() or (album or "").strip():
+        return MEDIA_KIND_AUDIO
+    return MEDIA_KIND_VIDEO
+
 
 @dataclass(frozen=True)
 class MediaInfo:
@@ -737,6 +826,8 @@ class MediaInfo:
     request_id: int = 0
     track_hash: str = ""
     track_url: str = ""
+    status: str = "Playing"
+    kind: str = ""
 
     @property
     def track_key(self) -> tuple[str, str, str, str]:

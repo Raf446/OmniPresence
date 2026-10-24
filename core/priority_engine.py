@@ -14,6 +14,7 @@ from typing import Any, Mapping, Sequence
 from urllib.parse import quote
 
 from core.settings_manager import SETTINGS_MANAGER
+from core.version import APP_VERSION
 from extractors.celestial_sync import CELESTIAL_SYNC
 from extractors.github_resolver import (
     DEFAULT_GITHUB_USER,
@@ -21,6 +22,7 @@ from extractors.github_resolver import (
     extract_github_owner,
 )
 from extractors.media.links import build_genius_url, build_media_buttons, build_spotify_url
+from extractors.media.poster_resolver import POSTER_RESOLVER
 from extractors.mood_engine import MOOD_ENGINE
 from extractors.youtube_resolver import YOUTUBE_THUMBNAIL_RESOLVER
 
@@ -304,6 +306,7 @@ class MatchSpec:
     fullscreen: bool = False
     builds: bool = False
     media_apps: tuple[str, ...] | None = None
+    media_kinds: tuple[str, ...] = ()
     manual: bool = False
     afk: bool = False
     standby: bool = False
@@ -322,6 +325,7 @@ class Rule:
     sticky_seconds: float
     idle_exempt: bool
     session_key: str
+    priority_boost: bool = False
 
     @property
     def kind(self) -> str:
@@ -395,6 +399,9 @@ def _parse_rule(raw: Mapping[str, Any], position: int) -> Rule:
     media_apps = None
     if media is not None:
         media_apps = tuple(app.lower() for app in _as_list(media.get("apps")))
+        media_kinds = tuple(kind.lower() for kind in _as_list(media.get("kinds")))
+    else:
+        media_kinds = ()
     match = MatchSpec(
         processes=frozenset(p.lower() for p in _as_list(raw_match.get("processes"))),
         exclude_processes=frozenset(p.lower() for p in _as_list(raw_match.get("exclude_processes"))),
@@ -402,6 +409,7 @@ def _parse_rule(raw: Mapping[str, Any], position: int) -> Rule:
         fullscreen=bool(raw_match.get("fullscreen", False)),
         builds=bool(raw_match.get("builds", False)),
         media_apps=media_apps,
+        media_kinds=media_kinds,
         manual=bool(raw_match.get("manual", False)),
         afk=bool(raw_match.get("afk", False)),
         standby=bool(raw_match.get("standby", False)),
@@ -457,6 +465,7 @@ def _parse_rule(raw: Mapping[str, Any], position: int) -> Rule:
         sticky_seconds=float(raw.get("sticky_seconds", 0)),
         idle_exempt=bool(raw.get("idle_exempt", False)),
         session_key=str(raw.get("session_key", "")),
+        priority_boost=bool(raw.get("priority_boost", False)),
     )
 
 
@@ -618,12 +627,16 @@ class RuleBook:
             hits.append((rule, groups))
         return hits
 
-    def match_media(self, app_id: str) -> Rule | None:
+    def match_media(self, app_id: str, kind: str = "") -> Rule | None:
         lowered = app_id.lower()
         for rule in self.of_kind("media"):
             apps = rule.match.media_apps or ()
-            if not apps or any(app in lowered for app in apps):
-                return rule
+            if apps and not any(app in lowered for app in apps):
+                continue
+            kinds = rule.match.media_kinds
+            if kinds and (kind or "").lower() not in kinds:
+                continue
+            return rule
         return None
 
 
@@ -752,7 +765,11 @@ class PriorityEngine:
         # background sticky carry-overs (foreground=False), preventing sticky IDE rules from blocking Spotify/media.
         rule, activity = min(
             candidates,
-            key=lambda pair: (0 if pair[1].foreground else 1, pair[0].tier, book.order_of(pair[0].id)),
+            key=lambda pair: (
+                0 if pair[1].foreground else 1,
+                self.effective_rank(pair[0]),
+                book.order_of(pair[0].id),
+            ),
         )
         self._touch_sessions(candidates, inp.now)
         presence = self._render(rule, activity, shared, inp.now, inp.manual)
@@ -764,6 +781,30 @@ class PriorityEngine:
         if inp.paused:
             return Resolution(presence, rule.tier, rule, activity, live_tiers, live_rules, False, "paused: " + reason)
         return Resolution(presence, rule.tier, rule, activity, live_tiers, live_rules, True, reason)
+
+    @staticmethod
+    def effective_rank(rule: Rule) -> float:
+        """Sort rank, lower wins. `priority_boost` rules (VLC) stay labelled P5 but outrank P3-P6.
+
+        Manual (P1) and Build (P2) keep their absolute precedence.
+        """
+        if rule.priority_boost and rule.tier > Tier.BUILD:
+            return Tier.BUILD + 0.5
+        if rule.tier == Tier.MEDIA:
+            return Tier.MEDIA + PriorityEngine.media_group(rule) / 10.0
+        return float(rule.tier)
+
+    @staticmethod
+    def media_group(rule: Rule) -> int:
+        """Fixed order inside P5 regardless of rules.json order: VLC > YouTube > Spotify > other media."""
+        rid = rule.id.lower()
+        if rid.startswith("vlc"):
+            return 0
+        if "youtube" in rid:
+            return 1
+        if "spotify" in rid:
+            return 2
+        return 3
 
     @staticmethod
     def _coerce_manual(manual: CustomRPCConfig | tuple[str, str] | None) -> CustomRPCConfig | None:
@@ -796,8 +837,11 @@ class PriorityEngine:
                 found.append((rule, activity))
 
         if media is not None:
-            rule = book.match_media(media.app_id)
+            media_kind = (getattr(media, "kind", "") or "").lower()
+            media_status = getattr(media, "status", "") or "Playing"
+            rule = book.match_media(media.app_id, media_kind)
             if rule is not None:
+                paused = media_status.lower() == "paused"
                 raw_art = (getattr(media, "artwork_url", "") or "").strip()
                 valid_art = (
                     raw_art
@@ -815,6 +859,11 @@ class PriorityEngine:
                     "track_url": getattr(media, "track_url", "") or "",
                     "spotify_url": build_spotify_url(media.title, media.artist, getattr(media, "track_url", "") or ""),
                     "genius_url": build_genius_url(media.title, media.artist),
+                    "media_status": media_status,
+                    "media_kind": media_kind,
+                    "paused_prefix": "[Paused]" if paused else "",
+                    "status_icon": "pause" if paused else "playing",
+                    "status_text": "Dijeda" if paused else book.media_label(media.app_id),
                 }
                 key = render(rule.session_key, variables) if rule.session_key else None
                 media_activity = Activity(rule.id, key or media.title, variables, media.start_at, media.end_at)
@@ -863,6 +912,8 @@ class PriorityEngine:
         mode = rule.presence.timestamp
         if mode == "none":
             return None, None
+        if mode == "media" and activity.variables.get("media_status") == "Paused":
+            return None, None  # paused: no progress bar and no running clock
         session = self._session_start.get(f"{rule.id}:{activity.key}")
         if mode == "session":
             return (int(session) if session else None), None
@@ -1012,6 +1063,14 @@ class PriorityEngine:
                     or f"https://github.com/{DEFAULT_GITHUB_USER}.png?size=512"
                 )
                 variables["github_url"] = "https://github.com"
+        elif rule.id == "vlc-video":
+            is_paused = variables.get("media_status", "").strip().lower() == "paused"
+            if not is_paused and not variables.get("artwork_url"):
+                track_title = variables.get("track", "").strip()
+                if track_title:
+                    poster_url = POSTER_RESOLVER.resolve_for_engine(track_title)
+                    if poster_url.lower().startswith("https://") and len(poster_url) <= 256:
+                        variables["artwork_url"] = poster_url
 
         # Adaptive Mood Engine: quantize cover/thumbnail URL into {mood_badge} and {mood_name}
         mood_source_url = (
@@ -1074,21 +1133,46 @@ class PriorityEngine:
                 large_image = "github"
 
         if rule.kind == "media":
+            is_vlc = rule.id.startswith("vlc")
+            is_paused = variables.get("media_status", "").strip().lower() == "paused"
+            track = variables.get("track", "").strip()
+            artist = variables.get("artist", "").strip()
             dynamic_art = variables.get("artwork_url", "").strip()
-            if dynamic_art.lower().startswith("https://") and len(dynamic_art) <= 256:
-                large_image = dynamic_art
-            elif not large_image:
-                large_image = "spotify" if "spotify" in rule.id else "music_placeholder"
+            has_valid_art = dynamic_art.lower().startswith("https://") and len(dynamic_art) <= 256
 
-            if not large_text:
-                track = variables.get("track", "").strip()
-                artist = variables.get("artist", "").strip()
-                if track and artist:
-                    large_text = f"{track} by {artist}"
-                elif track:
-                    large_text = track
+            if is_vlc and is_paused:
+                large_image = "pause"
+                large_text = f"Dijeda - {track}" if track else "Dijeda"
+                small_image = "pause"
+                small_text = "Dijeda"
+            elif is_vlc:
+                large_image = dynamic_art if has_valid_art else "vlc"
+                large_text = track or "VLC Media Player"
+                if rule.id == "vlc-video":
+                    if has_valid_art:
+                        small_image = "vlc"
+                        small_text = "VLC Media Player"
+                    else:
+                        small_image = None
+                        small_text = None
+            else:
+                if has_valid_art:
+                    large_image = dynamic_art
+                elif not large_image:
+                    large_image = "spotify" if "spotify" in rule.id else "music_placeholder"
 
-        if mood_res is not None and self.mood_apply_to_small_badge and (rule.kind == "media" or rule.id == "browser-youtube"):
+                if not large_text:
+                    if track and artist:
+                        large_text = f"{track} by {artist}"
+                    elif track:
+                        large_text = track
+
+        if (
+            mood_res is not None
+            and self.mood_apply_to_small_badge
+            and not rule.id.startswith("vlc")
+            and (rule.kind == "media" or rule.id == "browser-youtube")
+        ):
             small_image = mood_res.mood_badge
             small_text = f"{small_text} \u2022 {mood_res.mood_name}" if small_text else mood_res.mood_name
 
@@ -1109,7 +1193,7 @@ class PriorityEngine:
 
             details_text = f"CPU: {cpu_pct}% \u2022 RAM: {ram_used:.1f} / {ram_total:.0f} GB"
             small_image = "cpu_chip" if cpu_pct >= 50 else "ram_chip"
-            small_text = "OmniPresence v2.4"
+            small_text = f"OmniPresence v{APP_VERSION}"
 
             live_settings = SETTINGS_MANAGER.settings
             show_city = (

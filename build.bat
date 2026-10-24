@@ -1,13 +1,13 @@
 @echo off
 setlocal EnableDelayedExpansion
-title OmniPresence v2.4 - Automated Standalone .EXE Builder (Publisher: Raf446)
+title OmniPresence v2.4.1 - Automated Standalone .EXE Builder (Publisher: Raf446)
 
 cd /d "%~dp0"
 
 echo ====================================================================
 echo    OmniPresence Standalone .EXE Builder
 echo    App Name  : OmniPresence
-echo    Version   : 2.4
+echo    Version   : 2.4.1
 echo    Publisher : Raf446
 echo ====================================================================
 echo.

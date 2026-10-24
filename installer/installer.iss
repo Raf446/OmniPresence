@@ -1,5 +1,5 @@
 #define MyAppName "OmniPresence"
-#define MyAppVersion "2.4"
+#define MyAppVersion "2.4.1"
 #define MyAppPublisher "RafStore"
 #define MyAppURL "https://github.com/Raf446/OmniPresence"
 #define MyAppExeName "OmniPresence.exe"

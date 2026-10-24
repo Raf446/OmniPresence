@@ -6,10 +6,20 @@ tested with a mocked bus, on any platform.
 from __future__ import annotations
 
 import time
+import urllib.parse
 from typing import Any, Callable
 
 from extractors.media.base import BaseMediaExtractor, RawTrack
+from extractors.media.common import (
+    MEDIA_KIND_VIDEO,
+    STATUS_PAUSED,
+    STATUS_PLAYING,
+    classify_media_kind,
+    sanitize_media_title,
+    split_media_extension,
+)
 from extractors.media.links import spotify_track_url_from_id
+from extractors.media.vlc_http import VlcHttpClient
 
 MPRIS_PREFIX = "org.mpris.MediaPlayer2."
 MPRIS_PATH = "/org/mpris/MediaPlayer2"
@@ -39,8 +49,10 @@ class LinuxMprisExtractor(BaseMediaExtractor):
         art_resolver=None,
         parent=None,
         bus_factory: Callable[[], Any] | None = None,
+        vlc_client: VlcHttpClient | None = None,
     ) -> None:
         super().__init__(preferred_apps, art_resolver, parent)
+        self._vlc = vlc_client or VlcHttpClient()
         self._bus_factory = bus_factory
         self._bus: Any = None
 
@@ -77,20 +89,44 @@ class LinuxMprisExtractor(BaseMediaExtractor):
                     return name
         return playing[0] if playing else None
 
+    def _read_vlc_http(self) -> RawTrack | None:
+        raw = self._vlc.fetch()
+        notice = self._vlc.pop_notice()
+        if notice:
+            self.message.emit("warn", notice)
+        return raw
+
+    @staticmethod
+    def _is_vlc(name: str) -> bool:
+        return name.startswith(MPRIS_PREFIX + "vlc")
+
     def _read_session(self) -> RawTrack | None:
         try:
             bus = self._get_bus()
             playing: list[str] = []
+            vlc_paused: list[str] = []
             for name in self._list_players(bus):
                 try:
                     status = str(self._get_property(bus, name, PLAYER_IFACE, "PlaybackStatus"))
                 except Exception:
                     continue
-                if status == "Playing":
+                if status == STATUS_PLAYING:
                     playing.append(name)
-            chosen = self._pick(playing)
+                elif status == STATUS_PAUSED and self._is_vlc(name):
+                    vlc_paused.append(name)  # VLC keeps its presence while paused; other players do not
+            # P5 media priority: an actively playing VLC wins over any other player, a paused VLC only
+            # shows when nothing else is playing. 'Stopped' VLC never reaches this list.
+            vlc_playing = [name for name in playing if self._is_vlc(name)]
+            if not vlc_playing and not vlc_paused:
+                # D-Bus MPRIS stays the primary VLC source; without a VLC MPRIS player (plugin disabled,
+                # Flatpak/Snap sandbox) fall back to its HTTP web interface, which still outranks others.
+                http_raw = self._read_vlc_http()
+                if http_raw is not None:
+                    return http_raw
+            chosen = self._pick(vlc_playing) or self._pick(playing) or self._pick(vlc_paused)
             if chosen is None:
                 return None
+            status = STATUS_PLAYING if chosen in playing else STATUS_PAUSED
             metadata = self._get_property(bus, chosen, PLAYER_IFACE, "Metadata")
             try:
                 position_us = float(self._get_property(bus, chosen, PLAYER_IFACE, "Position"))
@@ -99,36 +135,55 @@ class LinuxMprisExtractor(BaseMediaExtractor):
         except Exception:
             self._bus = None  # force reconnect on the next tick
             raise
-        return self.parse_metadata(chosen, metadata, position_us)
+        return self.parse_metadata(chosen, metadata, position_us, status)
 
     @staticmethod
-    def parse_metadata(player_name: str, metadata: Any, position_us: float = 0.0) -> RawTrack | None:
+    def parse_metadata(
+        player_name: str, metadata: Any, position_us: float = 0.0, status: str = STATUS_PLAYING
+    ) -> RawTrack | None:
+        app_id = player_name[len(MPRIS_PREFIX):] if player_name.startswith(MPRIS_PREFIX) else player_name
+        app_id = app_id.split(".instance", 1)[0]
+        is_vlc = app_id.lower().startswith("vlc")
+
         title = _first_text(metadata.get("xesam:title"))
+        source_url = _first_text(metadata.get("xesam:url"))
+        if not title and is_vlc and source_url:
+            title = urllib.parse.unquote(urllib.parse.urlsplit(source_url).path).rsplit("/", 1)[-1]
         if not title:
             return None
         artist = _first_text(metadata.get("xesam:artist")) or _first_text(metadata.get("xesam:albumArtist"))
         album = _first_text(metadata.get("xesam:album"))
 
+        kind = ""
+        if is_vlc:
+            kind = classify_media_kind(title, source_url, artist, album)
+            if kind == MEDIA_KIND_VIDEO or split_media_extension(title)[1]:
+                title = sanitize_media_title(title)
+
         art_url = _first_text(metadata.get("mpris:artUrl"))
         if not art_url.lower().startswith(("http://", "https://")):
             art_url = ""  # file:// covers cannot be shown on Discord; the web resolver takes over
 
-        track_url = spotify_track_url_from_id(_first_text(metadata.get("xesam:url"))) or spotify_track_url_from_id(
+        track_url = spotify_track_url_from_id(source_url) or spotify_track_url_from_id(
             _first_text(metadata.get("mpris:trackid"))
         )
 
-        duration, start_at, end_at = 0.0, None, None
         try:
             span = float(metadata.get("mpris:length", 0)) / 1_000_000.0
         except (TypeError, ValueError):
             span = 0.0
+        position = max(position_us / 1_000_000.0, 0.0)
+        now = time.time()
+        duration, start_at, end_at = 0.0, None, None
         if span > 1:
-            now = time.time()
-            position = min(max(position_us / 1_000_000.0, 0.0), span)
+            position = min(position, span)
             duration, start_at, end_at = span, now - position, now - position + span
+        elif is_vlc:
+            start_at = now - position  # live stream / unknown length: running time only, no end
 
-        app_id = player_name[len(MPRIS_PREFIX):] if player_name.startswith(MPRIS_PREFIX) else player_name
-        app_id = app_id.split(".instance", 1)[0]
+        if status != STATUS_PLAYING:
+            start_at = end_at = None  # a paused timeline must not keep ticking in Discord
+
         return RawTrack(
             app_id=app_id,
             title=title,
@@ -139,4 +194,6 @@ class LinuxMprisExtractor(BaseMediaExtractor):
             end_at=end_at,
             art_url=art_url,
             track_url=track_url,
+            status=status,
+            kind=kind,
         )

@@ -12,6 +12,44 @@ from PySide6.QtCore import QObject, Signal
 
 CLIENT_ID_ENV = "OMNIPRESENCE_CLIENT_ID"
 DEFAULT_CLIENT_ID: str = "1560465175188996176"
+VLC_CLIENT_ID: str = "1563538304593436712"
+YOUTUBE_CLIENT_ID: str = "1562111104556204112"
+SPOTIFY_CLIENT_ID: str = "1562111027104063568"
+
+DYNAMIC_CLIENT_IDS: dict[str, str] = {
+    "vlc": VLC_CLIENT_ID,
+    "vlc-audio": VLC_CLIENT_ID,
+    "vlc-video": VLC_CLIENT_ID,
+    "youtube": YOUTUBE_CLIENT_ID,
+    "browser-youtube": YOUTUBE_CLIENT_ID,
+    "spotify": SPOTIFY_CLIENT_ID,
+}
+
+
+def resolve_client_id(
+    rule_id: str | None = None,
+    default_id: str = DEFAULT_CLIENT_ID,
+    custom_app_id: str | None = None,
+) -> str:
+    """Resolve the Discord Application ID for the active rule/media context.
+
+    Maps VLC (`1563538304593436712`), YouTube (`1562111104556204112`), and Spotify
+    (`1562111027104063568`) to their dedicated Application IDs, falling back to
+    `default_id` for coding, gaming, non-YouTube browsers, or idle.
+    """
+    if custom_app_id and str(custom_app_id).strip().isdigit():
+        return str(custom_app_id).strip()
+    rid = (rule_id or "").strip().lower()
+    if rid in DYNAMIC_CLIENT_IDS:
+        return DYNAMIC_CLIENT_IDS[rid]
+    if rid.startswith("vlc"):
+        return VLC_CLIENT_ID
+    if "youtube" in rid:
+        return YOUTUBE_CLIENT_ID
+    if "spotify" in rid:
+        return SPOTIFY_CLIENT_ID
+    cleaned_default = (default_id or "").strip()
+    return cleaned_default if cleaned_default.isdigit() else DEFAULT_CLIENT_ID
 
 
 def _coerce(value: Any, default: Any) -> Any:
@@ -46,6 +84,12 @@ class Settings:
     media_preferred_apps: list[str] = field(default_factory=lambda: ["spotify", "applemusic"])
     build_linger_seconds: float = 4.0
     log_capacity: int = 500
+
+    # VLC Media Player: polled through its HTTP web interface (http://host:port/requests/status.json)
+    vlc_http_enabled: bool = True
+    vlc_http_host: str = "127.0.0.1"
+    vlc_http_port: int = 8080
+    vlc_http_password: str = "omnipresence"  # must match VLC > Preferences > Lua HTTP > Password
 
     # Feature 1: Anti-AFK Privacy Shield & Biometric Lock
     privacy_shield_enabled: bool = True
@@ -101,6 +145,8 @@ class Settings:
         settings.idle_threshold_seconds = min(max(settings.idle_threshold_seconds, 30), 86400)
         settings.privacy_inactivity_minutes = min(max(settings.privacy_inactivity_minutes, 0), 720)
         settings.log_capacity = min(max(settings.log_capacity, 50), 5000)
+        settings.vlc_http_port = min(max(settings.vlc_http_port, 1), 65535)
+        settings.vlc_http_host = settings.vlc_http_host.strip() or "127.0.0.1"
         env_id = os.environ.get(CLIENT_ID_ENV, "").strip()
         if env_id and not settings.custom_client_id:
             settings.custom_client_id = env_id

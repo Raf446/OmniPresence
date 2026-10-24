@@ -392,6 +392,81 @@
       ]
     },
     {
+      "id": "vlc-audio",
+      "name": "VLC Media Player (music, P5 boosted)",
+      "enabled": true,
+      "tier": "media",
+      "priority_boost": true,
+      "match": {
+        "media": {
+          "apps": [
+            "vlc"
+          ],
+          "kinds": [
+            "audio"
+          ]
+        }
+      },
+      "session_key": "{track}|{artist}",
+      "presence": {
+        "details": [
+          "[[{paused_prefix}]] {track}"
+        ],
+        "state": [
+          "[[by {artist}]]",
+          "VLC Media Player"
+        ],
+        "large_image": [
+          "{artwork_url}",
+          "vlc"
+        ],
+        "large_text": [
+          "{track}"
+        ],
+        "small_image": "{status_icon}",
+        "small_text": "{status_text}",
+        "timestamp": "media",
+        "activity_type": "listening"
+      }
+    },
+    {
+      "id": "vlc-video",
+      "name": "VLC Media Player (video, P5 boosted)",
+      "enabled": true,
+      "tier": "media",
+      "priority_boost": true,
+      "match": {
+        "media": {
+          "apps": [
+            "vlc"
+          ],
+          "kinds": [
+            "video"
+          ]
+        }
+      },
+      "session_key": "{track}|{artist}",
+      "presence": {
+        "details": [
+          "[[{paused_prefix}]] {track}"
+        ],
+        "state": [
+          "VLC Media Player"
+        ],
+        "large_image": [
+          "{artwork_url}",
+          "vlc"
+        ],
+        "large_text": [
+          "{track}"
+        ],
+        "small_image": "{status_icon}",
+        "small_text": "{status_text}",
+        "timestamp": "media",
+        "activity_type": "watching"
+      }
+    },
+    {
       "id": "browser-youtube",
       "name": "YouTube in the browser",
       "enabled": true,
@@ -572,7 +647,7 @@
         "large_image": "{celestial_icon|idle}",
         "large_text": "System Idle â€¢ {ambient_vibe|Away from keyboard}",
         "small_image": "ram_chip",
-        "small_text": "OmniPresence v2.4",
+        "small_text": "OmniPresence v2.4.1",
         "timestamp": "session",
         "activity_type": "playing"
       }
@@ -598,11 +673,10 @@
         "large_image": "{celestial_icon|idle}",
         "large_text": "System Idle â€¢ {ambient_vibe|Standing by}",
         "small_image": "ram_chip",
-        "small_text": "OmniPresence v2.4",
+        "small_text": "OmniPresence v2.4.1",
         "timestamp": "none",
         "activity_type": "playing"
       }
     }
   ]
 }
-

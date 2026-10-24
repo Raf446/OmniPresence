@@ -60,7 +60,7 @@ from core.analytics_manager import (
     format_analytics_duration,
 )
 from core.priority_engine import Resolution, Tier
-from core.settings_manager import DEFAULT_CLIENT_ID
+from core.settings_manager import DEFAULT_CLIENT_ID, SPOTIFY_CLIENT_ID, VLC_CLIENT_ID, YOUTUBE_CLIENT_ID
 from core.updater import CURRENT_VERSION, UpdateCheckerThread, apply_update_and_restart
 from core.state_manager import LogEntry, StateManager
 from extractors.celestial_sync import CELESTIAL_SYNC
@@ -513,13 +513,13 @@ class SettingsPage(QScrollArea):
 
         s = state.settings
 
-        # Card 0: Discord Gateway Configuration (Central Gateway Architecture)
+        # Card 0: Discord Gateway Configuration (Dynamic Multi-Client ID Architecture)
         self._gateway_card = SettingsCard(
             "\U0001f310 Discord Gateway Configuration",
-            "Connects automatically via the Official OmniPresence Application ID Gateway out-of-the-box, or switch to a custom Developer Portal Application ID.",
+            "Automatically switches Discord Application IDs based on the active context (VLC, YouTube, Spotify, or Default OmniPresence Gateway).",
             has_toggle=False,
             checked=True,
-            badge_text="Central Gateway",
+            badge_text="Dynamic Multi-Client ID",
             parent=content,
         )
 
@@ -528,39 +528,10 @@ class SettingsPage(QScrollArea):
         self._gateway_card.add_row(
             "Active Gateway Mode",
             self._gateway_status_badge,
-            f"Official Default Application ID: {DEFAULT_CLIENT_ID}",
+            f"VLC ({VLC_CLIENT_ID}) \u2022 YouTube ({YOUTUBE_CLIENT_ID}) \u2022 Spotify ({SPOTIFY_CLIENT_ID}) \u2022 Default ({DEFAULT_CLIENT_ID})",
         )
 
-        self._use_custom_id_switch = ToggleSwitch(checked=getattr(s, "use_custom_client_id", False))
-        self._use_custom_id_switch.toggled.connect(self._on_custom_gateway_toggled)
-        self._gateway_card.add_row(
-            "Use Custom Application ID",
-            self._use_custom_id_switch,
-            "OFF = Official OmniPresence Gateway (Recommended) • ON = Custom Discord App ID",
-        )
-
-        id_box = QWidget()
-        id_layout = QHBoxLayout(id_box)
-        id_layout.setContentsMargins(0, 0, 0, 0)
-        id_layout.setSpacing(8)
-        initial_display_id = (
-            s.custom_client_id.strip()
-            if (getattr(s, "use_custom_client_id", False) and getattr(s, "custom_client_id", "").strip())
-            else DEFAULT_CLIENT_ID
-        )
-        self._client_id_edit = QLineEdit(initial_display_id)
-        self._client_id_edit.setFont(mono_font(11))
-        self._client_id_edit.setMinimumWidth(220)
-        self._client_id_edit.setPlaceholderText("Enter 18-19 digit Custom Application ID")
-        self._apply_gateway_btn = QPushButton("Apply & Reconnect", objectName="PrimaryButton")
-        self._apply_gateway_btn.setFont(ui_font(11, QFont.Weight.Bold))
-        self._apply_gateway_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._apply_gateway_btn.clicked.connect(self._on_apply_gateway_clicked)
-        id_layout.addWidget(self._client_id_edit, 1)
-        id_layout.addWidget(self._apply_gateway_btn)
-        self._gateway_card.add_row("Application ID", id_box)
-
-        self._refresh_gateway_ui(getattr(s, "use_custom_client_id", False), getattr(s, "custom_client_id", ""))
+        self._refresh_gateway_ui()
         layout.addWidget(self._gateway_card)
 
         # Card 1: Anti-AFK Privacy Shield & Biometric Lock
@@ -868,43 +839,12 @@ class SettingsPage(QScrollArea):
 
         self.setWidget(content)
 
-    def _refresh_gateway_ui(self, use_custom: bool, custom_id: str) -> None:
-        use_custom = bool(use_custom)
-        cleaned_custom = (custom_id or "").strip()
-        if use_custom:
-            self._gateway_status_badge.setText("[\u26a1] Custom Application ID Active")
-            self._gateway_status_badge.setProperty("official", "false")
-            self._client_id_edit.setEnabled(True)
-            self._client_id_edit.setReadOnly(False)
-            self._apply_gateway_btn.setEnabled(True)
-            if cleaned_custom and self._client_id_edit.text() == DEFAULT_CLIENT_ID:
-                self._client_id_edit.setText(cleaned_custom)
-            elif not cleaned_custom and self._client_id_edit.text() == DEFAULT_CLIENT_ID:
-                self._client_id_edit.clear()
-        else:
-            self._gateway_status_badge.setText("[\u2713] Connected via Official OmniPresence Gateway")
-            self._gateway_status_badge.setProperty("official", "true")
-            self._client_id_edit.setText(DEFAULT_CLIENT_ID)
-            self._client_id_edit.setReadOnly(True)
-            self._client_id_edit.setEnabled(False)
-            self._apply_gateway_btn.setEnabled(False)
+    def _refresh_gateway_ui(self, *_args) -> None:
+        active_id = self._state.resolve_active_client_id()
+        self._gateway_status_badge.setText(f"[\u2713] Dynamic Multi-Client ID Active ({active_id})")
+        self._gateway_status_badge.setProperty("official", "true")
         self._gateway_status_badge.style().unpolish(self._gateway_status_badge)
         self._gateway_status_badge.style().polish(self._gateway_status_badge)
-
-    def _on_custom_gateway_toggled(self, checked: bool) -> None:
-        custom_val = self._state.settings.custom_client_id
-        self._refresh_gateway_ui(checked, custom_val)
-        if not checked:
-            self._state.configure_gateway(False, custom_val)
-        elif custom_val.strip().isdigit():
-            self._state.configure_gateway(True, custom_val.strip())
-
-    def _on_apply_gateway_clicked(self) -> None:
-        raw_id = self._client_id_edit.text().strip()
-        if self._use_custom_id_switch.isChecked():
-            self._state.configure_gateway(True, raw_id)
-        else:
-            self._state.configure_gateway(False, self._state.settings.custom_client_id)
 
     def _on_reset_idle_icon_clicked(self) -> None:
         self._idle_icon_edit.clear()
@@ -996,12 +936,7 @@ class SettingsPage(QScrollArea):
         self._tray_switch.setChecked(s.tray_minimized, animate=False)
         self._tray_switch.blockSignals(False)
 
-        use_custom = bool(getattr(s, "use_custom_client_id", False))
-        custom_id = getattr(s, "custom_client_id", "")
-        self._use_custom_id_switch.blockSignals(True)
-        self._use_custom_id_switch.setChecked(use_custom, animate=False)
-        self._use_custom_id_switch.blockSignals(False)
-        self._refresh_gateway_ui(use_custom, custom_id)
+        self._refresh_gateway_ui()
         self._refresh_weather_preview()
 
 
@@ -1668,6 +1603,7 @@ class MainWindow(QMainWindow):
         state.manual_changed.connect(self._controls.set_manual_state)
         state.custom_rpc_changed.connect(self._custom_rpc.set_custom_rpc_state)
         state.client_id_changed.connect(self._controls.set_client_id_text)
+        state.client_id_changed.connect(self._settings_page._refresh_gateway_ui)
         state.profile_changed.connect(self._preview.set_profile)
         state.profile_updated.connect(self._preview.set_profile_assets)
         if state.profile_data:

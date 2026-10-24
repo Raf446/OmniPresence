@@ -212,7 +212,10 @@ class YouTubeThumbnailResolver:
             self._active_runnables.discard(runnable)
             listeners = list(self._listeners)
         if url and url != DEFAULT_FALLBACK_ASSET:
-            self.signals.resolved.emit(norm_key, video_title, url)
+            try:
+                self.signals.resolved.emit(norm_key, video_title, url)
+            except RuntimeError:
+                pass
             for callback in listeners:
                 try:
                     callback(video_title, url)
